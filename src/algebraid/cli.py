@@ -10,11 +10,12 @@ validate   Check a task set for structural or semantic issues.
 """
 
 import argparse
+import hashlib
 import os
 import json
 import re
 import time
-from datetime import date
+from datetime import datetime, date
 from pathlib import Path
 
 from .generator import AlgebraidGenerator
@@ -26,9 +27,23 @@ from .tasks.validator import TaskValidator, print_report
 
 # ── naming helpers ─────────────────────────────────────────────────────────
 
-def _default_task_path(seed: int) -> str:
-    """Default task-set path: ``./data/algebraid_s{seed}_{YYYYMMDD}.jsonl``."""
-    return f"./data/algebraid_s{seed}_{date.today():%Y%m%d}.jsonl"
+def _config_hash(depths: list, tasks_per_depth: int, families: list) -> str:
+    """Return a short 6-char hex hash of the generation configuration."""
+    raw = f"{sorted(depths)}-{tasks_per_depth}-{sorted(families)}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:6]
+
+
+def _default_task_path(seed: int, depths: list, tasks_per_depth: int, families: list) -> str:
+    """Default task-set path encoding seed, date, and config hash.
+
+    Pattern: ``./data/algebraid_s{seed}_{YYYYMMDD}_{config_hash}.jsonl``
+
+    The 6-character config hash is derived from depths, tasks_per_depth,
+    and families, so different generation parameters never overwrite each
+    other even when run on the same day with the same seed.
+    """
+    h = _config_hash(depths, tasks_per_depth, families)
+    return f"./data/algebraid_s{seed}_{date.today():%Y%m%d}_{h}.jsonl"
 
 
 def _sanitize(name: str) -> str:
@@ -41,30 +56,41 @@ def _stem(path: str) -> str:
     return Path(path).stem
 
 
-def _default_predictions_path(task_set_path: str, model: str) -> str:
-    """Default predictions path encoding the task set and model.
+def _timestamp() -> str:
+    """Return a compact timestamp: ``YYYYMMDD_HHMMSS``."""
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    Example: ``./results/preds_gpt_4_1_nano_algebraid_s42_20260225.json``
+
+def _default_predictions_path(task_set_path: str, model: str) -> str:
+    """Default predictions path encoding model, task set, and timestamp.
+
+    Pattern: ``./results/preds_{model}_{taskset}_{timestamp}.json``
+
+    Example: ``./results/preds_gpt_4_1_nano_algebraid_s42_20260225_e50604_20260225_143012.json``
     """
     ts = _sanitize(_stem(task_set_path))
     m = _sanitize(model)
-    return f"./results/preds_{m}_{ts}.json"
+    return f"./results/preds_{m}_{ts}_{_timestamp()}.json"
 
 
 def _default_report_path(task_set_path: str, model_name: str) -> str:
-    """Default evaluation report path encoding the task set and model.
+    """Default evaluation report path encoding model, task set, and timestamp.
 
-    Example: ``./results/report_gpt_4_1_nano_algebraid_s42_20260225.json``
+    Pattern: ``./results/report_{model}_{taskset}_{timestamp}.json``
+
+    Example: ``./results/report_gpt_4_1_nano_algebraid_s42_20260225_e50604_20260225_143012.json``
     """
     ts = _sanitize(_stem(task_set_path))
     m = _sanitize(model_name)
-    return f"./results/report_{m}_{ts}.json"
+    return f"./results/report_{m}_{ts}_{_timestamp()}.json"
 
 
 # ── generate ───────────────────────────────────────────────────────────────
 
 def _generate(args: argparse.Namespace) -> None:
-    output = args.output or _default_task_path(args.seed)
+    output = args.output or _default_task_path(
+        args.seed, args.depths, args.tasks_per_depth, args.families
+    )
     print(f"Generating task set (seed={args.seed}) ...")
 
     gen = AlgebraidGenerator(seed=args.seed)
