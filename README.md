@@ -96,11 +96,11 @@ Evaluate a set of model predictions against a task set.
 For more advanced use cases, you can use the Python API directly.
 
 ```python
-from algebraid import CompEvalGenerator, CompEvalEvaluator
+from algebraid import AlgebraidGenerator, AlgebraidEvaluator
 from algebraid.adapters import get_adapter
 
 # 1. Generate tasks
-gen = CompEvalGenerator(seed=42)
+gen = AlgebraidGenerator(seed=42)
 task_set = gen.generate(depths=[1, 2], tasks_per_depth=10)
 
 # 2. Run tasks
@@ -109,7 +109,7 @@ adapter = Adapter(model="gpt-4.1-nano", temperature=0.0, max_tokens=512, delay=0
 predictions = adapter.run_tasks(task_set)
 
 # 3. Evaluate
-evaluator = CompEvalEvaluator()
+evaluator = AlgebraidEvaluator()
 report = evaluator.evaluate(task_set, predictions, model_name="GPT-4.1-Nano")
 report.print_summary()
 
