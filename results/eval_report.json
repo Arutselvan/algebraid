@@ -1,0 +1,81 @@
+{
+  "model_name": "gpt-4.1-nano",
+  "task_set_name": "compeval_seed42",
+  "total_tasks": 296,
+  "total_correct": 101,
+  "accuracy_overall": 0.3412,
+  "compositional_ceiling_50": 1,
+  "compositional_ceiling_25": 4,
+  "algebraic_complexity": {
+    "avg_algebraic_entropy": 7.7579,
+    "avg_commutativity_distance": 0.1723,
+    "avg_orbit_complexity": 0.0485,
+    "avg_structural_interference": 0.0822
+  },
+  "accuracy_by_depth": {
+    "1": {
+      "total": 60,
+      "correct": 37,
+      "accuracy": 0.6167
+    },
+    "2": {
+      "total": 88,
+      "correct": 31,
+      "accuracy": 0.3523
+    },
+    "3": {
+      "total": 88,
+      "correct": 17,
+      "accuracy": 0.1932
+    },
+    "4": {
+      "total": 60,
+      "correct": 16,
+      "accuracy": 0.2667
+    }
+  },
+  "accuracy_by_family": {
+    "intra-structure composition": {
+      "total": 102,
+      "correct": 23,
+      "accuracy": 0.2255
+    },
+    "inter-structure composition": {
+      "total": 74,
+      "correct": 20,
+      "accuracy": 0.2703
+    },
+    "field arithmetic": {
+      "total": 60,
+      "correct": 46,
+      "accuracy": 0.7667
+    },
+    "rule induction": {
+      "total": 60,
+      "correct": 12,
+      "accuracy": 0.2
+    }
+  },
+  "accuracy_by_dimension": {
+    "general": {
+      "total": 240,
+      "correct": 88,
+      "accuracy": 0.3667
+    },
+    "systematicity": {
+      "total": 28,
+      "correct": 7,
+      "accuracy": 0.25
+    },
+    "substitutivity": {
+      "total": 14,
+      "correct": 3,
+      "accuracy": 0.2143
+    },
+    "overgeneralization": {
+      "total": 14,
+      "correct": 3,
+      "accuracy": 0.2143
+    }
+  }
+}

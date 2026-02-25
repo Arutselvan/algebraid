@@ -1,0 +1,40 @@
+
+============================================================
+  COMPEVAL Evaluation Report
+  Model: gpt-4.1-nano
+  Task Set: compeval_seed42
+============================================================
+
+  Overall Accuracy: 34.1% (101/296)
+  Compositional Ceiling (50%): depth 1
+  Compositional Ceiling (25%): depth 4
+
+  Algebraic Complexity Metrics (averages):
+    H_alg  (Algebraic Entropy):        7.7579
+    D_comm (Commutativity Distance):   0.1723
+    O_c    (Orbit Complexity):         0.0485
+    I_s    (Structural Interference):  0.0822
+
+  Depth    Correct    Total    Accuracy  
+  ----------------------------------------
+  1        37         60       61.7%
+  2        31         88       35.2%
+  3        17         88       19.3%
+  4        16         60       26.7%
+
+  Family                         Correct    Total    Accuracy  
+  -------------------------------------------------------
+  intra-structure composition    23         102      22.5%
+  inter-structure composition    20         74       27.0%
+  field arithmetic               46         60       76.7%
+  rule induction                 12         60       20.0%
+
+  Dimension                 Correct    Total    Accuracy  
+  --------------------------------------------------
+  general                   88         240      36.7%
+  systematicity             7          28       25.0%
+  substitutivity            3          14       21.4%
+  overgeneralization        3          14       21.4%
+
+============================================================
+
