@@ -6,11 +6,9 @@ Core data structures: ``Task``, ``TaskSet``, ``TaskFamily``, and
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Iterator, List, Optional, Tuple
-
-from .skins import SemanticSkin
 
 
 class TaskFamily(str, Enum):
@@ -46,11 +44,14 @@ class Task:
     structures: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
     solution_trace: Optional[List[Tuple[str, Any]]] = None
-    skin: Optional[SemanticSkin] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to a JSON-serializable dictionary."""
-        return {
+        """Convert to a JSON-serializable dictionary.
+
+        Null-valued optional fields and empty containers are omitted
+        to keep the serialized output compact.
+        """
+        d: Dict[str, Any] = {
             "task_id": self.task_id,
             "prompt": self.prompt,
             "answer": self.answer,
@@ -59,10 +60,12 @@ class Task:
             "family": self.family.value,
             "dimension": self.dimension.value,
             "structures": self.structures,
-            "metadata": self.metadata,
-            "solution_trace": self.solution_trace,
-            "skin": self.skin.name if self.skin else None,
         }
+        if self.metadata:
+            d["metadata"] = self.metadata
+        if self.solution_trace:
+            d["solution_trace"] = self.solution_trace
+        return d
 
 
 class TaskSet:
@@ -107,7 +110,9 @@ class TaskSet:
                 data = json.loads(line)
                 data["family"] = TaskFamily(data["family"])
                 data["dimension"] = CompositionDimension(data["dimension"])
-                data.pop("skin", None)  # serialized as name string; not needed for eval
+                # Optional fields may be absent in compact format
+                data.setdefault("metadata", {})
+                data.setdefault("solution_trace", None)
                 tasks.append(Task(**data))
         return cls(tasks)
 

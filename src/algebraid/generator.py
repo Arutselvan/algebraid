@@ -94,8 +94,6 @@ def _generate_intra_structure_task(rng, depth, idx, seed, verbalizer, dimension=
         family=TaskFamily.INTRA_STRUCTURE,
         dimension=dimension,
         structures=[structure.name],
-        skin=skin,
-        metadata={"ops": [op.name for op in chosen_ops], "skin": skin.name if skin else None},
         solution_trace=[(op_name, structure.element_to_str(val)) for op_name, val in trace],
     )
 
@@ -176,8 +174,6 @@ def _generate_rule_induction_task(rng, depth, idx, seed, verbalizer, dimension=C
         family=TaskFamily.RULE_INDUCTION,
         dimension=dimension,
         structures=[structure.name],
-        skin=skin,
-        metadata={"skin": skin.name if skin else None},
     )
 
 
@@ -202,8 +198,6 @@ def _generate_systematicity_pair(rng, depth, idx, seed, verbalizer):
         family=TaskFamily.INTRA_STRUCTURE,
         dimension=CompositionDimension.SYSTEMATICITY,
         structures=[structure.name],
-        skin=skin,
-        metadata={"skin": skin.name if skin else None},
     )
 
     x2 = structure.random_element(rng)
@@ -219,8 +213,6 @@ def _generate_systematicity_pair(rng, depth, idx, seed, verbalizer):
         family=TaskFamily.INTRA_STRUCTURE,
         dimension=CompositionDimension.SYSTEMATICITY,
         structures=[structure.name],
-        skin=skin,
-        metadata={"skin": skin.name if skin else None},
     )
     return [task1, task2]
 
