@@ -370,6 +370,7 @@ class Verbalizer:
         lines: List[str] = [tmpl["header"].format(
             name=structure_name,
             short_desc=field_struct.short_description,
+            expr=expr,
         )]
         if tmpl["task"]:  # Some templates have empty task strings
             lines.append("")
