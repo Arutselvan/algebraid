@@ -1,4 +1,4 @@
-# ALGEBRAID 🧠
+# ALGEBRAID
 
 **A procedurally generated benchmark for testing the compositional reasoning of AI models using formal algebraic structures.**
 
