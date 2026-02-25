@@ -13,6 +13,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..primitives.base import AlgebraicStructure
+from ..skins import SemanticSkin
 from ..composers.function_composition import AlgebraicOperation, ComposedFunction
 
 # ===========================================================================
@@ -117,7 +118,7 @@ INTRA_TEMPLATES: List[Dict[str, str]] = [
     # Template 3: Formal
     {
         "header": "Let G = {name} {short_desc}.",
-        "start": "Given x₀ = {x}, compute x_{depth} by applying these steps in sequence:",
+        "start": "Given x_0 = {x}, compute x_{depth} by applying these steps in sequence:",
         "step": "Step {i}: {op_desc}. Call the result x_{i}.",
         "footer": "What is the value of x_{depth}? Provide the answer only.",
     },
@@ -209,13 +210,13 @@ RULE_TEMPLATES: List[Dict[str, str]] = [
     {
         "header": "A function f operates on elements of {name} {short_desc}.",
         "intro": "You are given these observations:",
-        "example": "  Input: {x}  →  Output: {y}",
+        "example": "  Input: {x}  ->  Output: {y}",
         "question": "What output does input {test} produce? Give only the answer.",
     },
     {
         "header": "Pattern recognition in {name} {short_desc}.",
         "intro": "The following mappings have been observed:",
-        "example": "  {x} → {y}",
+        "example": "  {x} -> {y}",
         "question": "Following the same pattern, what does {test} map to?",
     },
     {
@@ -233,8 +234,8 @@ class Verbalizer:
 
     Usage:
         verb = Verbalizer(seed=42)
-        prompt = verb.verbalize_intra(structure, ops, x, depth)
-        prompt = verb.verbalize_inter(composed, op_desc)
+        prompt = verb.verbalize_intra(structure, composed_func, x, skin=skin)
+        prompt = verb.verbalize_inter(composed, a, b, op_type="op")
         prompt = verb.verbalize_field(field_struct, expr)
         prompt = verb.verbalize_rule(structure, examples, test_input)
     """
@@ -255,7 +256,7 @@ class Verbalizer:
     def _maybe_add_context(self, lines: List[str], n: Any = None) -> List[str]:
         """Optionally wrap the prompt in a context frame."""
         if self.context_frame:
-            frame: Dict[str, str] | None = CONTEXT_FRAMES.get(self.context_frame)
+            frame: Optional[Dict[str, str]] = CONTEXT_FRAMES.get(self.context_frame)
         elif self._rng.random() < 0.3:  # 30% chance of context frame
             frame = self._rng.choice(list(CONTEXT_FRAMES.values()))
         else:
@@ -268,32 +269,53 @@ class Verbalizer:
             return [intro, ""] + lines
         return lines
 
+    def _clean(self, text: str) -> str:
+        """Clean up common formatting issues in generated prompts."""
+        # Fix double periods but preserve set notation like {0, ..., n}
+        text = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', text)
+        # Fix trailing whitespace on lines
+        text = "\n".join(line.rstrip() for line in text.split("\n"))
+        return text
+
     def verbalize_intra(
         self,
         structure: AlgebraicStructure,
         composed_func: ComposedFunction,
         x: Any,
+        skin: Optional[SemanticSkin] = None,
     ) -> str:
         """Generate a diverse prompt for an intra-structure task."""
         tmpl: dict = self._pick_template(INTRA_TEMPLATES)
         depth = len(composed_func.operations)
 
+        if skin:
+            structure_name = skin.structure_name(structure)
+            x_str = skin.element_name(x, structure)
+            op_descs = [
+                skin.op_description(op.name, op.fixed_args, structure)
+                for op in composed_func.operations
+            ]
+        else:
+            structure_name = structure.name
+            x_str = structure.element_to_str(x)
+            op_descs = [op.description for op in composed_func.operations]
+
         lines: List[str] = [tmpl["header"].format(
-            name=structure.name,
+            name=structure_name,
             short_desc=structure.short_description,
         )]
         lines.append("")
         lines.append(tmpl["start"].format(
-            x=structure.element_to_str(x),
+            x=x_str,
             depth=depth,
         ))
         lines.append("")
 
-        for i, op in enumerate(composed_func.operations, 1):
+        for i, op_desc in enumerate(op_descs, 1):
             step_str = tmpl["step"].format(
                 i=i,
                 i_prev=i - 1,
-                op_desc=op.description, # This is the source of raw op names
+                op_desc=op_desc,
                 depth=depth,
             )
             lines.append(step_str)
@@ -305,10 +327,7 @@ class Verbalizer:
         order = getattr(structure, 'n', getattr(structure, 'p', None))
         lines = self._maybe_add_context(lines, order)
 
-        result = "\n".join(lines)
-        # Fix double periods but preserve set notation like {0, ..., n}
-        result = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', result)
-        return result
+        return self._clean("\n".join(lines))
 
     def verbalize_inter(
         self,
@@ -316,22 +335,31 @@ class Verbalizer:
         a: Any,
         b: Any = None,
         op_type: str = "op",
+        skin: Optional[SemanticSkin] = None,
     ) -> str:
         """Generate a diverse prompt for an inter-structure task."""
         tmpl: dict = self._pick_template(INTER_TEMPLATES)
 
-        a_str = composed.element_to_str(a)
-        if op_type == "inverse":
-            op_desc = f"Compute the inverse of {a_str} in {composed.name}."
-        elif op_type == "op_then_inverse":
-            b_str = composed.element_to_str(b)
-            op_desc = f"Compute the inverse of ({a_str} {composed.operation_symbol()} {b_str}) in {composed.name}."
+        if skin:
+            a_str = skin.element_name(a, composed)
+            b_str = skin.element_name(b, composed) if b is not None else None
+            composed_name = skin.structure_name(composed)
         else:
-            b_str = composed.element_to_str(b)
-            op_desc = f"{a_str} {composed.operation_symbol()} {b_str}"
+            a_str = composed.element_to_str(a)
+            b_str = composed.element_to_str(b) if b is not None else None
+            composed_name = composed.name
+
+        if op_type == "inverse":
+            op_desc = f"Compute the inverse of {a_str} in {composed_name}."
+        elif op_type == "op_then_inverse":
+            b_str_val = composed.element_to_str(b) if skin is None else skin.element_name(b, composed)
+            op_desc = f"Compute the inverse of ({a_str} * {b_str_val}) in {composed_name}."
+        else:
+            b_str_val = composed.element_to_str(b) if skin is None else skin.element_name(b, composed)
+            op_desc = f"{a_str} {composed.operation_symbol()} {b_str_val}"
 
         lines: List[str] = [tmpl["header"].format(
-            name=composed.name,
+            name=composed_name,
             desc=composed.description,
         )]
         lines.append("")
@@ -339,48 +367,48 @@ class Verbalizer:
         lines.append("")
         lines.append(tmpl["footer"])
 
-        result = "\n".join(lines)
-        # Fix double periods but preserve set notation like {0, ..., n}
-        result = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', result)
-        return result
+        return self._clean("\n".join(lines))
 
     def verbalize_field(
         self,
         field_struct: AlgebraicStructure,
         expr: str,
+        skin: Optional[SemanticSkin] = None,
     ) -> str:
         """Generate a diverse prompt for a field arithmetic task."""
         tmpl: dict = self._pick_template(FIELD_TEMPLATES)
 
+        structure_name = skin.structure_name(field_struct) if skin else field_struct.name
+
         lines: List[str] = [tmpl["header"].format(
-            name=field_struct.name,
+            name=structure_name,
             short_desc=field_struct.short_description,
         )]
-        if tmpl["task"]: # Some templates have empty task strings
+        if tmpl["task"]:  # Some templates have empty task strings
             lines.append("")
             lines.append(tmpl["task"].format(
-                name=field_struct.name,
+                name=structure_name,
                 expr=expr,
             ))
         lines.append("")
         lines.append(tmpl["footer"])
 
-        result = "\n".join(lines)
-        # Fix double periods but preserve set notation like {0, ..., n}
-        result = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', result)
-        return result
+        return self._clean("\n".join(lines))
 
     def verbalize_rule(
         self,
         structure: AlgebraicStructure,
         train_examples: List[Tuple[Any, Any]],
         test_input: Any,
+        skin: Optional[SemanticSkin] = None,
     ) -> str:
         """Generate a diverse prompt for a rule induction task."""
         tmpl: dict = self._pick_template(RULE_TEMPLATES)
 
+        structure_name = skin.structure_name(structure) if skin else structure.name
+
         lines: List[str] = [tmpl["header"].format(
-            name=structure.name,
+            name=structure_name,
             short_desc=structure.short_description,
         )]
         lines.append("")
@@ -388,19 +416,16 @@ class Verbalizer:
         if tmpl["intro"]:
             lines.append(tmpl["intro"])
 
-        for x, y in train_examples:
-            lines.append(tmpl["example"].format(
-                x=structure.element_to_str(x),
-                y=structure.element_to_str(y),
-            ))
+        for x_val, y_val in train_examples:
+            x_str = skin.element_name(x_val, structure) if skin else structure.element_to_str(x_val)
+            y_str = skin.element_name(y_val, structure) if skin else structure.element_to_str(y_val)
+            lines.append(tmpl["example"].format(x=x_str, y=y_str))
 
         lines.append("")
-        lines.append(tmpl["question"].format(test=structure.element_to_str(test_input)))
+        test_str = skin.element_name(test_input, structure) if skin else structure.element_to_str(test_input)
+        lines.append(tmpl["question"].format(test=test_str))
 
-        result = "\n".join(lines)
-        # Fix double periods but preserve set notation like {0, ..., n}
-        result = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', result)
-        return result
+        return self._clean("\n".join(lines))
 
     def relabel_elements(
         self,
@@ -417,10 +442,8 @@ class Verbalizer:
         Returns:
             Mapping from integer elements to string labels.
         """
-        label_pool_list = ELEMENT_LABEL_POOLS.get(label_pool, ELEMENT_LABEL_POOLS["greek"])
-        if len(label_pool_list) < num_elements:
-            pool = list(range(num_elements))
-        else:
-            pool = self._rng.sample(label_pool_list, num_elements)
-
+        pool_list = ELEMENT_LABEL_POOLS.get(label_pool, ELEMENT_LABEL_POOLS["greek"])
+        if len(pool_list) < num_elements:
+            return {i: str(i) for i in range(num_elements)}
+        pool = self._rng.sample(pool_list, num_elements)
         return {i: str(pool[i]) for i in range(num_elements)}

@@ -2,9 +2,14 @@
 ALGEBRAID Task Model - Data structures for tasks, task sets, and evaluation dimensions.
 """
 
-from typing import Any, List, Dict, Optional, NamedTuple, Iterator, Tuple
-from enum import Enum
+from __future__ import annotations
+
 import json
+from dataclasses import dataclass, field, asdict
+from enum import Enum
+from typing import Any, Dict, Iterator, List, Optional, Tuple
+
+from .skins import SemanticSkin
 
 
 class TaskFamily(str, Enum):
@@ -26,7 +31,8 @@ class CompositionDimension(str, Enum):
     OVERGENERALIZATION = "overgeneralization"
 
 
-class Task(NamedTuple):
+@dataclass
+class Task:
     """A single evaluation instance."""
 
     task_id: str
@@ -36,9 +42,26 @@ class Task(NamedTuple):
     depth: int
     family: TaskFamily
     dimension: CompositionDimension = CompositionDimension.GENERAL
-    structures: List[str] = []
-    metadata: Dict[str, Any] = {}
+    structures: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
     solution_trace: Optional[List[Tuple[str, Any]]] = None
+    skin: Optional[SemanticSkin] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to a JSON-serializable dictionary."""
+        return {
+            "task_id": self.task_id,
+            "prompt": self.prompt,
+            "answer": self.answer,
+            "answer_raw": self.answer_raw,
+            "depth": self.depth,
+            "family": self.family.value,
+            "dimension": self.dimension.value,
+            "structures": self.structures,
+            "metadata": self.metadata,
+            "solution_trace": self.solution_trace,
+            "skin": self.skin.name if self.skin else None,
+        }
 
 
 class TaskSet:
@@ -72,11 +95,7 @@ class TaskSet:
         """Save the task set to a JSONL file."""
         with open(path, "w") as f:
             for task in self.tasks:
-                d = task._asdict()
-                # Convert enums to strings for JSON serialization
-                d["family"] = d["family"].value if hasattr(d["family"], "value") else d["family"]
-                d["dimension"] = d["dimension"].value if hasattr(d["dimension"], "value") else d["dimension"]
-                f.write(json.dumps(d) + "\n")
+                f.write(json.dumps(task.to_dict()) + "\n")
 
     @classmethod
     def from_jsonl(cls, path: str) -> "TaskSet":
@@ -87,6 +106,8 @@ class TaskSet:
                 data = json.loads(line)
                 data["family"] = TaskFamily(data["family"])
                 data["dimension"] = CompositionDimension(data["dimension"])
+                # skin is stored as a name string; drop it on load (not needed for eval)
+                data.pop("skin", None)
                 tasks.append(Task(**data))
         return cls(tasks)
 

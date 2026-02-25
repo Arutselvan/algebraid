@@ -85,23 +85,27 @@ def make_standard_operations(
         )
     )
 
-    # 4. Conjugate by fixed element
-    fixed_elem_c = structure.random_element(rng)
-    elem_str_c = structure.element_to_str(fixed_elem_c)
-    ops.append(
-        AlgebraicOperation(
-            name=f"conj_{elem_str_c}",
-            func=lambda x, c: structure.op_chain(c, x, structure.inverse(c)),
-            arity=1,
-            description=r.choice([
-                f"sandwich the current value between {elem_str_c} and its inverse",
-                f"apply the transformation {elem_str_c} * x * {elem_str_c}\u207b\u00b9",
-                f"wrap the current value with {elem_str_c} on both sides",
-            ]),
-            symbol=f"{elem_str_c} * _ * {elem_str_c}^-1",
-            fixed_args=(fixed_elem_c,),
+    # 4. Conjugate by fixed element — only meaningful for non-abelian structures
+    # (CyclicGroup and FiniteField are abelian: c*x*c^-1 = x always, so skip)
+    from ..primitives.cyclic_group import CyclicGroup as _CG
+    from ..primitives.finite_field import FiniteField as _FF
+    if not isinstance(structure, (_CG, _FF)):
+        fixed_elem_c = structure.random_element(rng)
+        elem_str_c = structure.element_to_str(fixed_elem_c)
+        ops.append(
+            AlgebraicOperation(
+                name=f"conj_{elem_str_c}",
+                func=lambda x, c: structure.op_chain(c, x, structure.inverse(c)),
+                arity=1,
+                description=r.choice([
+                    f"sandwich the current value between {elem_str_c} and its inverse",
+                    f"apply the transformation {elem_str_c} * x * {elem_str_c}\u207b\u00b9",
+                    f"wrap the current value with {elem_str_c} on both sides",
+                ]),
+                symbol=f"{elem_str_c} * _ * {elem_str_c}^-1",
+                fixed_args=(fixed_elem_c,),
+            )
         )
-    )
 
     # 5. Power (squaring, cubing)
     power = r.choice([2, 3])

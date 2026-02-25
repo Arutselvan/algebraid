@@ -13,6 +13,7 @@ import hashlib
 from typing import Any, Dict, List, Optional, Tuple
 
 from .primitives import CyclicGroup, SymmetricGroup, DihedralGroup, FiniteField
+from .skins import SKIN_REGISTRY, SemanticSkin
 from .primitives.base import AlgebraicStructure
 from .composers import DirectProduct, AlgebraicOperation, ComposedFunction, make_standard_operations
 from .task_model import Task, TaskFamily, CompositionDimension, TaskSet
@@ -75,26 +76,30 @@ def _build_field_expression(field, depth, rng):
     return f"({left_expr} {op} {right_expr})", val
 
 
-def _generate_intra_structure_task(rng, depth, idx, seed, verbalizer, dimension=CompositionDimension.GENERAL):
+def _generate_intra_structure_task(rng, depth, idx, seed, verbalizer, dimension=CompositionDimension.GENERAL, use_skins=True):
     structure = _random_structure(rng)
+    skin = rng.choice(SKIN_REGISTRY[structure.__class__.__name__]) if use_skins else None
     all_ops = make_standard_operations(structure, rng)
     chosen_ops = [rng.choice(all_ops) for _ in range(depth)]
     chain = ComposedFunction(chosen_ops, structure)
     x = structure.random_element(rng)
     answer_raw = chain(x)
     answer_str = structure.element_to_str(answer_raw)
+    # If a skin is active, the answer should also be expressed in the skin's language
+    answer_display = skin.element_name(answer_raw, structure) if skin else answer_str
     trace = chain.trace(x)
-    prompt = verbalizer.verbalize_intra(structure, chain, x)
+    prompt = verbalizer.verbalize_intra(structure, chain, x, skin=skin)
     return Task(
         task_id=_task_id(seed, "intra", depth, idx),
         prompt=prompt,
-        answer=answer_str,
-        answer_raw=answer_str,  # store as string for JSON serialization
+        answer=answer_display,
+        answer_raw=answer_str,  # always store the canonical algebraic answer for verification
         depth=depth,
         family=TaskFamily.INTRA_STRUCTURE,
         dimension=dimension,
         structures=[structure.name],
-        metadata={"ops": [op.name for op in chosen_ops]},
+        skin=skin,
+        metadata={"ops": [op.name for op in chosen_ops], "skin": skin.name if skin else None},
         solution_trace=[(op_name, structure.element_to_str(val)) for op_name, val in trace],
     )
 
@@ -149,7 +154,7 @@ def _generate_field_arithmetic_task(rng, depth, idx, seed, verbalizer, dimension
     )
 
 
-def _generate_rule_induction_task(rng, depth, idx, seed, verbalizer, dimension=CompositionDimension.GENERAL):
+def _generate_rule_induction_task(rng, depth, idx, seed, verbalizer, dimension=CompositionDimension.GENERAL, use_skins=True):
     num_examples = depth + 3
     structure = _random_cyclic(rng, min_n=num_examples + 5, max_n=num_examples + 15)
     all_ops = make_standard_operations(structure, rng)
@@ -161,17 +166,22 @@ def _generate_rule_induction_task(rng, depth, idx, seed, verbalizer, dimension=C
     test_input = inputs[num_examples]
     answer_raw = chain(test_input)
 
-    prompt = verbalizer.verbalize_rule(structure, examples, test_input)
+    skin = rng.choice(SKIN_REGISTRY[structure.__class__.__name__]) if use_skins else None
+    prompt = verbalizer.verbalize_rule(structure, examples, test_input, skin=skin)
+    answer_str = structure.element_to_str(answer_raw)
+    answer_display = skin.element_name(answer_raw, structure) if skin else answer_str
 
     return Task(
         task_id=_task_id(seed, "rule", depth, idx),
         prompt=prompt,
-        answer=structure.element_to_str(answer_raw),
-        answer_raw=structure.element_to_str(answer_raw),
+        answer=answer_display,
+        answer_raw=answer_str,
         depth=depth,
         family=TaskFamily.RULE_INDUCTION,
         dimension=dimension,
         structures=[structure.name],
+        skin=skin,
+        metadata={"skin": skin.name if skin else None},
     )
 
 
@@ -182,32 +192,39 @@ def _generate_systematicity_pair(rng, depth, idx, seed, verbalizer):
         return []
     f, g, h, k = rng.sample(all_ops, 4)
 
+    skin = rng.choice(SKIN_REGISTRY[structure.__class__.__name__])
     x1 = structure.random_element(rng)
     chain1 = ComposedFunction([f, k], structure)
     answer1_raw = chain1(x1)
+    answer1_str = structure.element_to_str(answer1_raw)
     task1 = Task(
         task_id=_task_id(seed, "syst", depth, f"{idx}-1"),
-        prompt=verbalizer.verbalize_intra(structure, chain1, x1),
-        answer=structure.element_to_str(answer1_raw),
-        answer_raw=structure.element_to_str(answer1_raw),
+        prompt=verbalizer.verbalize_intra(structure, chain1, x1, skin=skin),
+        answer=skin.element_name(answer1_raw, structure) if skin else answer1_str,
+        answer_raw=answer1_str,
         depth=depth,
         family=TaskFamily.INTRA_STRUCTURE,
         dimension=CompositionDimension.SYSTEMATICITY,
         structures=[structure.name],
+        skin=skin,
+        metadata={"skin": skin.name if skin else None},
     )
 
     x2 = structure.random_element(rng)
     chain2 = ComposedFunction([h, g], structure)
     answer2_raw = chain2(x2)
+    answer2_str = structure.element_to_str(answer2_raw)
     task2 = Task(
         task_id=_task_id(seed, "syst", depth, f"{idx}-2"),
-        prompt=verbalizer.verbalize_intra(structure, chain2, x2),
-        answer=structure.element_to_str(answer2_raw),
-        answer_raw=structure.element_to_str(answer2_raw),
+        prompt=verbalizer.verbalize_intra(structure, chain2, x2, skin=skin),
+        answer=skin.element_name(answer2_raw, structure) if skin else answer2_str,
+        answer_raw=answer2_str,
         depth=depth,
         family=TaskFamily.INTRA_STRUCTURE,
         dimension=CompositionDimension.SYSTEMATICITY,
         structures=[structure.name],
+        skin=skin,
+        metadata={"skin": skin.name if skin else None},
     )
     return [task1, task2]
 
@@ -226,9 +243,15 @@ def _generate_substitutivity_task(rng, depth, idx, seed, verbalizer):
 
     elements_str = ", ".join(labels)
     prompt = f"Consider an algebraic structure with elements {{{elements_str}}}.\n"
+    prompt += f"The operation on this structure follows the same rules as addition modulo {n}.\n"
     prompt += f"Starting with the element x = {label_map[x]}, perform the following operations in order:\n"
     for i, op in enumerate(chosen_ops, 1):
-        prompt += f"Step {i}: Apply the operation \'{op.name}\'.\n"
+        # Use the op's natural description but replace any numeric references with label equivalents
+        desc = op.description
+        # Replace any raw element references in the description with their label equivalents
+        for elem_int, label in label_map.items():
+            desc = desc.replace(f" {elem_int} ", f" {label} ").replace(f"by {elem_int}", f"by {label}").replace(f"with {elem_int}", f"with {label}")
+        prompt += f"Step {i}: {desc}.\n"
     prompt += "\nWhat is the final result? Give only the label."
 
     return Task(
@@ -287,6 +310,7 @@ class AlgebraidGenerator:
         tasks_per_depth: int = 10,
         families: Optional[List[str]] = None,
         include_dimensions: bool = True,
+        use_skins: bool = True,
     ) -> TaskSet:
         if depths is None:
             depths = [1, 2, 3, 4, 5]
