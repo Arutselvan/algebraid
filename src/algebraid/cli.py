@@ -1,10 +1,11 @@
 """
 ALGEBRAID Command-Line Interface.
 
-Provides three main commands:
+Provides four main commands:
 - `algebraid generate`: Generate a new task set.
 - `algebraid run`: Run a task set against a model.
 - `algebraid evaluate`: Evaluate model predictions.
+- `algebraid validate`: Validate a task set for quality issues.
 """
 
 import argparse
@@ -16,6 +17,7 @@ from .generator import AlgebraidGenerator
 from .evaluator import AlgebraidEvaluator
 from .task_model import TaskSet
 from .adapters import get_adapter
+from .tasks.validator import TaskValidator, print_validation_report
 
 
 def _generate_handler(args):
@@ -34,6 +36,15 @@ def _generate_handler(args):
     task_set.to_jsonl(args.output)
     print(f"Task set with {len(task_set)} tasks saved to {args.output}")
     print(task_set.summary())
+
+    # Auto-validate unless --skip-validation is set
+    if not args.skip_validation:
+        print("Running post-generation validation...")
+        validator = TaskValidator()
+        report = validator.validate_taskset(task_set)
+        print_validation_report(report)
+        if report["failed"] > 0:
+            print(f"WARNING: {report['failed']} tasks failed validation. Review errors above.")
 
 
 def _run_handler(args):
@@ -96,6 +107,27 @@ def _evaluate_handler(args):
     report.print_summary()
 
 
+def _validate_handler(args):
+    """Handle the `validate` subcommand."""
+    if not os.path.exists(args.task_set):
+        print(f"Error: Task set file not found at {args.task_set}")
+        return
+
+    print(f"Validating task set: {args.task_set}")
+    task_set = TaskSet.from_jsonl(args.task_set)
+    validator = TaskValidator()
+    report = validator.validate_taskset(task_set)
+    print_validation_report(report)
+
+    if args.output:
+        out_dir = os.path.dirname(args.output)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(args.output, "w") as f:
+            json.dump(report, f, indent=2)
+        print(f"Validation report saved to {args.output}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="algebraid",
@@ -125,6 +157,10 @@ def main():
     p_gen.add_argument(
         "--no-dims", action="store_true",
         help="Exclude Hupkes compositionality dimensions."
+    )
+    p_gen.add_argument(
+        "--skip-validation", action="store_true",
+        help="Skip post-generation validation."
     )
     p_gen.set_defaults(func=_generate_handler)
 
@@ -172,6 +208,15 @@ def main():
     )
     p_eval.add_argument("--strict", action="store_true", help="Enable strict answer matching.")
     p_eval.set_defaults(func=_evaluate_handler)
+
+    # ── validate ──────────────────────────────────────────────────────────────
+    p_val = subparsers.add_parser("validate", help="Validate a task set for quality issues.")
+    p_val.add_argument("task_set", help="Path to the task set JSONL file.")
+    p_val.add_argument(
+        "-o", "--output", default=None,
+        help="Output path for validation report JSON. (default: print only)"
+    )
+    p_val.set_defaults(func=_validate_handler)
 
     args = parser.parse_args()
     args.func(args)
