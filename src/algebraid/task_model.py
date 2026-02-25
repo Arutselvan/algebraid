@@ -48,10 +48,11 @@ class Task:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to a JSON-serializable dictionary.
 
-        Null-valued optional fields and empty containers are omitted
-        to keep the serialized output compact.
+        Every task emits the same set of fields to guarantee a uniform
+        schema across the entire task set.  Fields that do not apply to
+        a particular task type are serialized as ``null``.
         """
-        d: Dict[str, Any] = {
+        return {
             "task_id": self.task_id,
             "prompt": self.prompt,
             "answer": self.answer,
@@ -60,12 +61,9 @@ class Task:
             "family": self.family.value,
             "dimension": self.dimension.value,
             "structures": self.structures,
+            "metadata": self.metadata if self.metadata else None,
+            "solution_trace": self.solution_trace,
         }
-        if self.metadata:
-            d["metadata"] = self.metadata
-        if self.solution_trace:
-            d["solution_trace"] = self.solution_trace
-        return d
 
 
 class TaskSet:
