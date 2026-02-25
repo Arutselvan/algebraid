@@ -35,13 +35,11 @@ class DihedralGroup(AlgebraicStructure):
 
     @property
     def description(self) -> str:
-        return (
-            f"The dihedral group D_{self.n}, the group of symmetries of a regular "
-            f"{self.n}-gon. It has {2 * self.n} elements: {self.n} rotations and "
-            f"{self.n} reflections. Elements are written as (r, s) where r is the "
-            f"rotation index r ∈ {{0, ..., {self.n - 1}}} and s is 0 (no reflection) or "
-            f"1 (reflection)."
-        )
+        return f"The dihedral group D_{self.n}, the group of symmetries of a regular {self.n}-gon. It has {2 * self.n} elements: {self.n} rotations and {self.n} reflections. Elements are written as (r, s) where r is the rotation index r ∈ {{0, ..., {self.n - 1}}} and s is 0 (no reflection) or 1 (reflection)."
+
+    @property
+    def short_description(self) -> str:
+        return f"(symmetries of a {self.n}-gon)"
 
     def elements(self) -> List[DihedralElement]:
         return [(r, s) for r in range(self.n) for s in range(2)]

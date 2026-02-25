@@ -25,10 +25,11 @@ class SymmetricGroup(AlgebraicStructure):
 
     @property
     def description(self) -> str:
-        return (
-            f"The symmetric group S_{self.n}, the group of all permutations of "
-            f"{{1, ..., {self.n}}}. Elements are written in one-line notation as tuples."
-        )
+        return f"The symmetric group S_{self.n}, the group of all permutations of {{1, ..., {self.n}}}. Elements are written in one-line notation as tuples."
+
+    @property
+    def short_description(self) -> str:
+        return f"(permutations of {self.n} elements)"
 
     def elements(self) -> List[Permutation]:
         if self._elements is None:

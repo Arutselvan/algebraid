@@ -22,7 +22,13 @@ class AlgebraicStructure(ABC):
     @property
     @abstractmethod
     def description(self) -> str:
-        """Natural language description of the structure."""
+        """Full natural language description of the structure."""
+        pass
+
+    @property
+    @abstractmethod
+    def short_description(self) -> str:
+        """A short, parenthetical-style description for inline use, e.g. '(the integers mod 7)'."""
         pass
 
     @abstractmethod

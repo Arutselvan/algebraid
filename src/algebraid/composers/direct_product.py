@@ -36,6 +36,10 @@ class DirectProduct(AlgebraicStructure):
             f"(a1 {self.G.operation_symbol()} a2, b1 {self.H.operation_symbol()} b2)."
         )
 
+    @property
+    def short_description(self) -> str:
+        return f"(product of {self.G.name} and {self.H.name})"
+
     def elements(self) -> List[Tuple[Any, Any]]:
         return [(g, h) for g in self.G.elements() for h in self.H.elements()]
 

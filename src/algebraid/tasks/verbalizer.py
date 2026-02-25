@@ -1,6 +1,6 @@
-"""
-ALGEBRAID Natural Language Diversity System.
+# ALGEBRAID Natural Language Diversity System.
 
+"""
 Provides 50+ prompt template variants, entity name randomization, and
 multiple context frames to resist contamination and ensure that models
 are tested on reasoning rather than pattern-matching surface forms.
@@ -9,6 +9,7 @@ are tested on reasoning rather than pattern-matching surface forms.
 from __future__ import annotations
 
 import random
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..primitives.base import AlgebraicStructure
@@ -94,113 +95,71 @@ CONTEXT_FRAMES: Dict[str, Dict[str, str]] = {
 INTRA_TEMPLATES: List[Dict[str, str]] = [
     # Template 0: Original (baseline)
     {
-        "header": "Consider the algebraic structure {name} ({desc}).",
+        "header": "Consider the algebraic structure {name} {short_desc}.",
         "start": "Starting with the element x = {x}, perform the following operations in order:",
-        "step": "Step {i}: Apply {op_desc}.",
+        "step": "Step {i}: {op_desc}.",
         "footer": "What is the final result? Give only the answer.",
     },
     # Template 1: Imperative
     {
-        "header": "You are working in {name}, defined as: {desc}.",
+        "header": "You are working in {name} {short_desc}.",
         "start": "Begin with x = {x}. Execute these operations sequentially:",
         "step": "{i}. {op_desc}",
         "footer": "Report the final value. Answer with just the number.",
     },
     # Template 2: Narrative
     {
-        "header": "In the algebraic structure {name} ({desc}), a computation unfolds as follows.",
+        "header": "In the algebraic structure {name} {short_desc}, a computation unfolds as follows:",
         "start": "The initial value is {x}. The following transformations are applied one after another:",
         "step": "Transformation {i}: {op_desc}.",
         "footer": "What value remains at the end? State only the answer.",
     },
     # Template 3: Formal
     {
-        "header": "Let G = {name} with the property: {desc}.",
+        "header": "Let G = {name} {short_desc}.",
         "start": "Given x₀ = {x}, compute x_{depth} by applying these steps in sequence:",
-        "step": "x_{i} = {op_desc}(x_{i_prev})",
-        "footer": "What is x_{depth}? Provide the numerical answer only.",
+        "step": "Step {i}: {op_desc}. Call the result x_{i}.",
+        "footer": "What is the value of x_{depth}? Provide the answer only.",
     },
     # Template 4: Question-first
     {
-        "header": "Here is a problem involving {name} ({desc}).",
-        "start": "If you start at {x} and apply the operations below one by one, what do you end up with?",
-        "step": "Operation {i}: {op_desc}",
-        "footer": "Give only the final answer.",
+        "header": "In the algebraic system {name} {short_desc}, what is the final result of the following sequence?",
+        "start": "Start with {x} and apply these operations one by one, in order:",
+        "step": "{i}) {op_desc}",
+        "footer": "Final answer:",
     },
     # Template 5: Conversational
     {
-        "header": "I need help with a calculation in {name}. For reference: {desc}.",
-        "start": "Take the element {x}.",
-        "step": "{op_desc}.",
-        "footer": "What's the answer? Just the value, please.",
-    },
-    # Template 6: Exam-style
-    {
-        "header": "Problem: In {name} ({desc}), evaluate the following composition.",
-        "start": "Input: {x}",
-        "step": "Apply {op_desc}",
-        "footer": "Final answer:",
-    },
-    # Template 7: Chain notation
-    {
-        "header": "Working within {name}: {desc}.",
-        "start": "Evaluate the chain starting from {x}:",
-        "step": "→ apply {op_desc} → ?",
-        "footer": "What is the final output? Answer only.",
-    },
-    # Template 8: Pseudocode
-    {
-        "header": "Consider {name} where {desc}.",
-        "start": "x = {x}",
-        "step": "x = {op_desc}(x)  # step {i}",
-        "footer": "What is the value of x? Give only the number.",
-    },
-    # Template 9: Reverse framing (state the goal first)
-    {
-        "header": "Determine the result of a sequence of algebraic operations in {name} ({desc}).",
-        "start": "The sequence begins at {x} and proceeds through {depth} steps:",
-        "step": "Step {i}: {op_desc}(x_{i_prev}) → x_{i}",
-        "footer": "State the final result as a single value.",
-    },
-    # Template 10: Minimal
-    {
-        "header": "{name}. {desc}.",
-        "start": "x = {x}.",
-        "step": "{op_desc}.",
-        "footer": "Result?",
-    },
-    # Template 11: Verbose / tutorial
-    {
-        "header": "We will work in the algebraic structure known as {name}. Recall that {desc}.",
-        "start": "Our starting element is x = {x}. We will apply a series of {depth} operations to this element, one after another. Each operation takes the current value and produces a new value within the same structure.",
-        "step": "In step {i}, we {op_desc}.",
-        "footer": "After all {depth} operations have been applied, what is the resulting element? Please provide only the final numerical answer.",
+        "header": "I need help with a calculation in {name} {short_desc}.",
+        "start": "If I start with {x} and do the following:",
+        "step": "- {op_desc}",
+        "footer": "What do I end up with?",
     },
 ]
 
 INTER_TEMPLATES: List[Dict[str, str]] = [
     {
-        "header": "Consider the group {name}: {desc}",
-        "task": "{op_desc}",
-        "footer": "What is the result? Give only the answer as a tuple.",
+        "header": "Consider the direct product group {name}. {desc}",
+        "task": "Calculate: {op_desc}",
+        "footer": "What is the resulting tuple?",
     },
     {
-        "header": "Working in the product group {name} ({desc}):",
+        "header": "Working in the product group {name}. {desc}",
         "task": "{op_desc}",
         "footer": "Express the answer as a tuple.",
     },
     {
-        "header": "In {name}, where {desc}, solve the following.",
+        "header": "In {name}, solve the following. {desc}",
         "task": "{op_desc}",
         "footer": "Provide the tuple answer only.",
     },
     {
-        "header": "Problem: {name} ({desc}).",
+        "header": "Problem: {name}. {desc}",
         "task": "Compute {op_desc}",
         "footer": "Answer (tuple):",
     },
     {
-        "header": "Let G = {name}. {desc}.",
+        "header": "Let G = {name}. {desc}",
         "task": "Evaluate: {op_desc}",
         "footer": "Give the result as a tuple.",
     },
@@ -208,27 +167,27 @@ INTER_TEMPLATES: List[Dict[str, str]] = [
 
 FIELD_TEMPLATES: List[Dict[str, str]] = [
     {
-        "header": "Consider the finite field {name}: {desc}.",
-        "task": "Compute the following expression in {name}: {expr}",
+        "header": "Consider the finite field {name} {short_desc}.",
+        "task": "Compute the following expression: {expr}",
         "footer": "What is the result? Give only the numerical answer.",
     },
     {
-        "header": "In {name} ({desc}), evaluate:",
+        "header": "In {name} {short_desc}, evaluate:",
         "task": "{expr}",
         "footer": "Answer (single number):",
     },
     {
-        "header": "Working in {name} where {desc}.",
-        "task": "What is {expr}?",
+        "header": "Working in {name} {short_desc}, what is {expr}?",
+        "task": "",
         "footer": "Give only the numerical result.",
     },
     {
-        "header": "Calculate the following in the finite field {name}. Recall: {desc}.",
+        "header": "Calculate the following in the finite field {name} {short_desc}.",
         "task": "Expression: {expr}",
         "footer": "Final numerical answer:",
     },
     {
-        "header": "Problem: Evaluate an arithmetic expression in {name} ({desc}).",
+        "header": "Problem: Evaluate an arithmetic expression in {name} {short_desc}.",
         "task": "{expr}",
         "footer": "What does this equal? State only the number.",
     },
@@ -236,31 +195,31 @@ FIELD_TEMPLATES: List[Dict[str, str]] = [
 
 RULE_TEMPLATES: List[Dict[str, str]] = [
     {
-        "header": "Consider the algebraic structure {name}: {desc}.",
+        "header": "Consider the algebraic structure {name} {short_desc}.",
         "intro": "An unknown function f maps elements of this structure to other elements. Here are some examples of f:",
         "example": "  f({x}) = {y}",
         "question": "What is f({test})? Give only the answer.",
     },
     {
-        "header": "In {name} ({desc}), a mystery transformation T is defined by the following input-output pairs:",
+        "header": "In {name} {short_desc}, a mystery transformation T is defined by the following input-output pairs:",
         "intro": "",
         "example": "  T({x}) = {y}",
         "question": "Predict T({test}). Answer with just the value.",
     },
     {
-        "header": "A function f operates on elements of {name} ({desc}).",
+        "header": "A function f operates on elements of {name} {short_desc}.",
         "intro": "You are given these observations:",
         "example": "  Input: {x}  →  Output: {y}",
         "question": "What output does input {test} produce? Give only the answer.",
     },
     {
-        "header": "Pattern recognition in {name} ({desc}).",
+        "header": "Pattern recognition in {name} {short_desc}.",
         "intro": "The following mappings have been observed:",
         "example": "  {x} → {y}",
         "question": "Following the same pattern, what does {test} map to?",
     },
     {
-        "header": "Decode the rule. Working in {name}. {desc}.",
+        "header": "Decode the rule. Working in {name} {short_desc}.",
         "intro": "Clues:",
         "example": "  f({x}) = {y}",
         "question": "Apply the rule to {test}. State only the answer.",
@@ -269,7 +228,7 @@ RULE_TEMPLATES: List[Dict[str, str]] = [
 
 
 class Verbalizer:
-    '''
+    """
     Generates diverse natural language prompts for ALGEBRAID tasks.
 
     Usage:
@@ -278,7 +237,7 @@ class Verbalizer:
         prompt = verb.verbalize_inter(composed, op_desc)
         prompt = verb.verbalize_field(field_struct, expr)
         prompt = verb.verbalize_rule(structure, examples, test_input)
-    '''
+    """
 
     def __init__(self, seed: int = 42, context_frame: Optional[str] = None) -> None:
         """
@@ -321,7 +280,7 @@ class Verbalizer:
 
         lines: List[str] = [tmpl["header"].format(
             name=structure.name,
-            desc=structure.description,
+            short_desc=structure.short_description,
         )]
         lines.append("")
         lines.append(tmpl["start"].format(
@@ -334,7 +293,7 @@ class Verbalizer:
             step_str = tmpl["step"].format(
                 i=i,
                 i_prev=i - 1,
-                op_desc=op.description,
+                op_desc=op.description, # This is the source of raw op names
                 depth=depth,
             )
             lines.append(step_str)
@@ -346,7 +305,10 @@ class Verbalizer:
         order = getattr(structure, 'n', getattr(structure, 'p', None))
         lines = self._maybe_add_context(lines, order)
 
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        # Fix double periods but preserve set notation like {0, ..., n}
+        result = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', result)
+        return result
 
     def verbalize_inter(
         self,
@@ -377,7 +339,10 @@ class Verbalizer:
         lines.append("")
         lines.append(tmpl["footer"])
 
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        # Fix double periods but preserve set notation like {0, ..., n}
+        result = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', result)
+        return result
 
     def verbalize_field(
         self,
@@ -389,17 +354,21 @@ class Verbalizer:
 
         lines: List[str] = [tmpl["header"].format(
             name=field_struct.name,
-            desc=field_struct.description,
+            short_desc=field_struct.short_description,
         )]
-        lines.append("")
-        lines.append(tmpl["task"].format(
-            name=field_struct.name,
-            expr=expr,
-        ))
+        if tmpl["task"]: # Some templates have empty task strings
+            lines.append("")
+            lines.append(tmpl["task"].format(
+                name=field_struct.name,
+                expr=expr,
+            ))
         lines.append("")
         lines.append(tmpl["footer"])
 
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        # Fix double periods but preserve set notation like {0, ..., n}
+        result = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', result)
+        return result
 
     def verbalize_rule(
         self,
@@ -412,49 +381,46 @@ class Verbalizer:
 
         lines: List[str] = [tmpl["header"].format(
             name=structure.name,
-            desc=structure.description,
+            short_desc=structure.short_description,
         )]
         lines.append("")
 
         if tmpl["intro"]:
             lines.append(tmpl["intro"])
-            lines.append("")
 
-        for x_val, y_val in train_examples:
+        for x, y in train_examples:
             lines.append(tmpl["example"].format(
-                x=structure.element_to_str(x_val),
-                y=structure.element_to_str(y_val),
+                x=structure.element_to_str(x),
+                y=structure.element_to_str(y),
             ))
 
         lines.append("")
-        lines.append(tmpl["question"].format(
-            test=structure.element_to_str(test_input),
-        ))
+        lines.append(tmpl["question"].format(test=structure.element_to_str(test_input)))
 
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        # Fix double periods but preserve set notation like {0, ..., n}
+        result = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', result)
+        return result
 
     def relabel_elements(
         self,
-        n: int,
-        label_pool: Optional[str] = None,
+        num_elements: int,
+        label_pool: str = "greek",
     ) -> Dict[int, str]:
-        '''
-        Generate a random relabelling map for n elements.
+        """
+        Generate a random relabeling map for elements.
 
         Args:
-            n: Number of elements to relabel.
-            label_pool: Name of the label pool to use (None = random).
+            num_elements: Number of elements to relabel.
+            label_pool: Name of the label pool to use from ELEMENT_LABEL_POOLS.
 
         Returns:
-            Dict mapping integer elements to string labels.
-        '''
-        if label_pool is None:
-            label_pool = self._rng.choice(list(ELEMENT_LABEL_POOLS.keys()))
+            Mapping from integer elements to string labels.
+        """
+        label_pool_list = ELEMENT_LABEL_POOLS.get(label_pool, ELEMENT_LABEL_POOLS["greek"])
+        if len(label_pool_list) < num_elements:
+            pool = list(range(num_elements))
+        else:
+            pool = self._rng.sample(label_pool_list, num_elements)
 
-        pool = ELEMENT_LABEL_POOLS.get(label_pool, [])
-        if len(pool) < n:
-            # Fallback to a large pool if the chosen one is too small
-            pool = ELEMENT_LABEL_POOLS["emoji_safe"]
-
-        labels = self._rng.sample(pool, n)
-        return {i: labels[i] for i in range(n)}
+        return {i: str(pool[i]) for i in range(num_elements)}

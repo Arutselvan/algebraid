@@ -28,10 +28,11 @@ class CyclicGroup(AlgebraicStructure):
 
     @property
     def description(self) -> str:
-        return (
-            f"The cyclic group of order {self.n}, consisting of integers "
-            f"{{0, 1, ..., {self.n - 1}}} under addition modulo {self.n}."
-        )
+        return f"The cyclic group of order {self.n}, consisting of integers {{0, 1, ..., {self.n - 1}}} under addition modulo {self.n}."
+
+    @property
+    def short_description(self) -> str:
+        return f"(the integers mod {self.n})"
 
     def elements(self) -> List[int]:
         return list(range(self.n))

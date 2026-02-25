@@ -57,11 +57,11 @@ class FiniteField(AlgebraicStructure):
 
     @property
     def description(self) -> str:
-        return (
-            f"The finite field GF({self.p}), consisting of integers "
-            f"{{0, 1, ..., {self.p - 1}}} with addition and multiplication "
-            f"modulo {self.p}."
-        )
+        return f"The finite field GF({self.p}), consisting of integers {{0, 1, ..., {self.p - 1}}} with addition and multiplication modulo {self.p}."
+
+    @property
+    def short_description(self) -> str:
+        return f"(integers mod {self.p})"
 
     def elements(self) -> List[int]:
         return list(range(self.p))
