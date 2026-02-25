@@ -1,4 +1,4 @@
-"""ALGEBRAID Composition Operators."""
+"""Composition operators: function composition and direct products."""
 
 from .direct_product import DirectProduct
 from .function_composition import (

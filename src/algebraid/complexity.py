@@ -1,11 +1,11 @@
 """
-ALGEBRAID Algebraic Complexity Metrics.
+Algebraic complexity metrics.
 
-Four native metrics that only ALGEBRAID can compute because of its algebraic foundation:
-- H_alg: Algebraic Entropy - information-theoretic difficulty based on group order
-- D_comm: Commutativity Distance - fraction of consecutive op pairs that are order-dependent
-- O_c: Orbit Complexity - fraction of the group's elements visited by the computation trace
-- I_s: Structural Interference - shared divisors between component group orders in direct products
+Four structure-aware difficulty measures:
+    H_alg  — Algebraic Entropy (information-theoretic search space)
+    D_comm — Commutativity Distance (order-dependence of operations)
+    O_c    — Orbit Complexity (fraction of group visited by the trace)
+    I_s    — Structural Interference (shared divisors in direct products)
 """
 
 import math

@@ -1,221 +1,202 @@
 """
-ALGEBRAID Task Validator.
+Task validation for generated benchmark instances.
 
-Provides post-generation validation to catch prompt-answer misalignment,
-missing information, and other quality issues. This module was created in
-response to identified defects where skin descriptions contradicted the
-underlying mathematical operations.
+Provides structural and semantic checks to ensure that every task in a
+generated set is well-formed, self-consistent, and solvable from its
+prompt alone.  Validation is organized into four independent check
+categories:
 
-Validation checks:
-1. Recomputation: re-execute the operation chain and verify the answer matches
-2. Prompt completeness: ensure all required parameters are present in the prompt
-3. Skin consistency: verify that skin-translated elements are valid
-4. Structural integrity: check task_id uniqueness, required fields, etc.
+    1. Schema — required fields, types, and value ranges.
+    2. Prompt — completeness, readability, and absence of template
+       artifacts.
+    3. Answer — consistency between the answer, raw answer, and
+       solution trace.
+    4. Trace — structural soundness of the solution trace when present.
 """
 
 from __future__ import annotations
 
 import re
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 from ..task_model import Task, TaskSet
 
 
-class ValidationResult:
-    """Result of validating a single task."""
+# ── Result container ────────────────────────────────────────────────────────
 
-    def __init__(self, task_id: str):
+class ValidationResult:
+    """Outcome of validating a single task."""
+
+    def __init__(self, task_id: str) -> None:
         self.task_id = task_id
         self.errors: List[str] = []
         self.warnings: List[str] = []
 
     @property
-    def is_valid(self) -> bool:
+    def passed(self) -> bool:
         return len(self.errors) == 0
 
-    def add_error(self, msg: str) -> None:
+    def error(self, msg: str) -> None:
         self.errors.append(msg)
 
-    def add_warning(self, msg: str) -> None:
+    def warn(self, msg: str) -> None:
         self.warnings.append(msg)
 
     def __repr__(self) -> str:
-        status = "PASS" if self.is_valid else "FAIL"
-        return f"ValidationResult({self.task_id}: {status}, {len(self.errors)} errors, {len(self.warnings)} warnings)"
+        tag = "PASS" if self.passed else "FAIL"
+        return (
+            f"ValidationResult({self.task_id}: {tag}, "
+            f"{len(self.errors)} errors, {len(self.warnings)} warnings)"
+        )
 
+
+# ── Core validator ──────────────────────────────────────────────────────────
 
 class TaskValidator:
-    """Validates ALGEBRAID tasks for correctness and completeness."""
+    """Run validation checks on individual tasks or entire task sets."""
 
-    def validate_task(self, task: Task) -> ValidationResult:
-        """Run all validation checks on a single task."""
+    def validate(self, task: Task) -> ValidationResult:
+        """Validate a single task across all check categories."""
         result = ValidationResult(task.task_id)
-
-        # 1. Required fields check
-        self._check_required_fields(task, result)
-
-        # 2. Prompt completeness check
-        self._check_prompt_completeness(task, result)
-
-        # 3. Answer consistency check
-        self._check_answer_consistency(task, result)
-
-        # 4. Solution trace check (if present)
+        self._check_schema(task, result)
+        self._check_prompt(task, result)
+        self._check_answer(task, result)
         if task.solution_trace:
-            self._check_solution_trace(task, result)
-
+            self._check_trace(task, result)
         return result
 
-    def validate_taskset(self, taskset: TaskSet) -> Dict[str, Any]:
-        """Validate an entire task set and return a summary report."""
+    def validate_set(self, task_set: TaskSet) -> Dict[str, Any]:
+        """Validate every task in *task_set* and return a summary report."""
         results: List[ValidationResult] = []
-        task_ids = set()
+        seen_ids: set = set()
         duplicate_ids: List[str] = []
 
-        for task in taskset:
-            # Check for duplicate IDs
-            if task.task_id in task_ids:
+        for task in task_set:
+            if task.task_id in seen_ids:
                 duplicate_ids.append(task.task_id)
-            task_ids.add(task.task_id)
+            seen_ids.add(task.task_id)
+            results.append(self.validate(task))
 
-            # Validate individual task
-            vr = self.validate_task(task)
-            results.append(vr)
+        passed = sum(1 for r in results if r.passed)
+        all_errors = [f"[{r.task_id}] {e}" for r in results for e in r.errors]
+        all_warnings = [f"[{r.task_id}] {w}" for r in results for w in r.warnings]
 
-        total = len(results)
-        passed = sum(1 for r in results if r.is_valid)
-        failed = total - passed
-        all_errors = []
-        all_warnings = []
-        for r in results:
-            for e in r.errors:
-                all_errors.append(f"[{r.task_id}] {e}")
-            for w in r.warnings:
-                all_warnings.append(f"[{r.task_id}] {w}")
-
-        report = {
-            "total_tasks": total,
+        return {
+            "total": len(results),
             "passed": passed,
-            "failed": failed,
-            "pass_rate": round(passed / total * 100, 1) if total > 0 else 0.0,
+            "failed": len(results) - passed,
+            "pass_rate": round(passed / len(results) * 100, 1) if results else 0.0,
             "duplicate_ids": duplicate_ids,
             "errors": all_errors,
             "warnings": all_warnings,
-            "error_count": len(all_errors),
-            "warning_count": len(all_warnings),
         }
-        return report
 
-    def _check_required_fields(self, task: Task, result: ValidationResult) -> None:
-        """Check that all required fields are present and non-empty."""
+    # ── 1. Schema checks ───────────────────────────────────────────────────
+
+    def _check_schema(self, task: Task, r: ValidationResult) -> None:
         if not task.task_id:
-            result.add_error("Missing task_id")
+            r.error("Missing task_id.")
         if not task.prompt or len(task.prompt.strip()) < 10:
-            result.add_error("Prompt is missing or too short")
+            r.error("Prompt is missing or too short (< 10 chars).")
         if not task.answer and task.answer != "0":
-            result.add_error("Missing answer")
+            r.error("Missing answer.")
         if task.answer_raw is None and task.answer_raw != 0:
-            result.add_error("Missing answer_raw")
+            r.error("Missing answer_raw.")
         if task.depth < 0:
-            result.add_error(f"Invalid depth: {task.depth}")
+            r.error(f"Invalid depth: {task.depth}.")
 
-    def _check_prompt_completeness(self, task: Task, result: ValidationResult) -> None:
-        """Check that the prompt contains all information needed to solve the task."""
+    # ── 2. Prompt checks ───────────────────────────────────────────────────
+
+    # Phrases that indicate an operation handler fell through to a generic
+    # default instead of producing a specific, solvable instruction.
+    _UNDERSPECIFIED_PATTERNS: List[str] = [
+        r"(?:step\s+\d+|^\s*\d+[\.\)])\s*:?\s*apply a shuffle",
+        r"(?:step\s+\d+|^\s*\d+[\.\)])\s*:?\s*apply a symmetry",
+        r"(?:step\s+\d+|^\s*\d+[\.\)])\s*:?\s*apply a tile move",
+        r"(?:step\s+\d+|^\s*\d+[\.\)])\s*:?\s*rearrange the seats",
+        r"(?:step\s+\d+|^\s*\d+[\.\)])\s*:?\s*apply a code transformation",
+        r"(?:step\s+\d+|^\s*\d+[\.\)])\s*:?\s*apply a modular operation",
+    ]
+
+    def _check_prompt(self, task: Task, r: ValidationResult) -> None:
         prompt = task.prompt
 
-        # Check for generic fallback descriptions that indicate missing info
-        generic_phrases = [
-            "apply a shuffle",
-            "apply a symmetry",
-            "apply a tile move",
-            "rearrange the seats",
-            "apply a code transformation",
-            "apply a modular operation",
-        ]
-        for phrase in generic_phrases:
-            # Only flag if the phrase appears as a step instruction (not in a header/description)
-            # Look for it after "Step" or as a numbered item
-            pattern = rf'(?:Step\s+\d+|^\d+[\.\)])\s*:?\s*{re.escape(phrase)}'
+        # Detect underspecified operation instructions.
+        for pattern in self._UNDERSPECIFIED_PATTERNS:
             if re.search(pattern, prompt, re.MULTILINE | re.IGNORECASE):
-                result.add_error(
-                    f"Prompt contains generic fallback '{phrase}' — "
-                    f"specific operation parameters are missing"
+                r.error(
+                    "Prompt contains an underspecified operation instruction "
+                    "that does not provide enough information to solve the task."
                 )
+                break  # one error per task is sufficient
 
-        # Check for placeholder-like patterns
-        if "{" in prompt and "}" in prompt:
-            # Check for unresolved template variables (but allow set notation like {0, 1, ...})
-            unresolved = re.findall(r'\{[a-z_]+\}', prompt)
-            if unresolved:
-                result.add_error(f"Unresolved template variables in prompt: {unresolved}")
+        # Detect unresolved template variables (e.g. {op_name}).
+        unresolved = re.findall(r"\{[a-z_]+\}", prompt)
+        if unresolved:
+            r.error(f"Unresolved template variables: {unresolved}.")
 
-        # Check for double periods (formatting issue)
+        # Formatting: double periods (but not ellipsis).
         if ".." in prompt and "..." not in prompt:
-            result.add_warning("Double period detected in prompt")
+            r.warn("Double period detected in prompt text.")
 
-    def _check_answer_consistency(self, task: Task, result: ValidationResult) -> None:
-        """Check that answer and answer_raw are consistent."""
-        # For tasks with solution traces, verify the final trace value matches answer_raw
-        if task.solution_trace:
-            final_op, final_val = task.solution_trace[-1]
-            if str(final_val) != str(task.answer_raw):
-                result.add_error(
-                    f"Solution trace final value '{final_val}' does not match "
-                    f"answer_raw '{task.answer_raw}'"
-                )
+    # ── 3. Answer checks ───────────────────────────────────────────────────
 
-    def _check_solution_trace(self, task: Task, result: ValidationResult) -> None:
-        """Validate the solution trace structure."""
-        trace = task.solution_trace
-        if not trace:
+    def _check_answer(self, task: Task, r: ValidationResult) -> None:
+        if not task.solution_trace:
             return
+        _, final_val = task.solution_trace[-1]
+        if str(final_val) != str(task.answer_raw):
+            r.error(
+                f"Trace final value '{final_val}' does not match "
+                f"answer_raw '{task.answer_raw}'."
+            )
 
-        # First entry should be "start"
+    # ── 4. Trace checks ────────────────────────────────────────────────────
+
+    def _check_trace(self, task: Task, r: ValidationResult) -> None:
+        trace = task.solution_trace
         if trace[0][0] != "start":
-            result.add_warning("Solution trace does not start with 'start' entry")
-
-        # Check trace length matches depth + 1 (start + depth operations)
-        expected_len = task.depth + 1
-        if len(trace) != expected_len:
-            result.add_warning(
-                f"Solution trace length {len(trace)} does not match expected "
-                f"{expected_len} (depth {task.depth} + 1 start)"
+            r.warn("Solution trace does not begin with a 'start' entry.")
+        expected_length = task.depth + 1
+        if len(trace) != expected_length:
+            r.warn(
+                f"Trace length ({len(trace)}) differs from expected "
+                f"({expected_length} = depth {task.depth} + 1)."
             )
 
 
-def validate_jsonl_file(path: str) -> Dict[str, Any]:
-    """Validate a JSONL task file and return a report."""
-    taskset = TaskSet.from_jsonl(path)
-    validator = TaskValidator()
-    return validator.validate_taskset(taskset)
+# ── Convenience helpers ─────────────────────────────────────────────────────
+
+def validate_file(path: str) -> Dict[str, Any]:
+    """Load a JSONL task file and return a validation report."""
+    return TaskValidator().validate_set(TaskSet.from_jsonl(path))
 
 
-def print_validation_report(report: Dict[str, Any]) -> None:
-    """Print a human-readable validation report."""
-    print(f"\n{'='*60}")
-    print(f"ALGEBRAID Task Validation Report")
-    print(f"{'='*60}")
-    print(f"Total tasks:    {report['total_tasks']}")
-    print(f"Passed:         {report['passed']}")
-    print(f"Failed:         {report['failed']}")
-    print(f"Pass rate:      {report['pass_rate']}%")
-    print(f"Errors:         {report['error_count']}")
-    print(f"Warnings:       {report['warning_count']}")
+def print_report(report: Dict[str, Any]) -> None:
+    """Print a human-readable validation summary to stdout."""
+    sep = "=" * 56
+    print(f"\n{sep}")
+    print("  ALGEBRAID Validation Report")
+    print(sep)
+    print(f"  Total tasks : {report['total']}")
+    print(f"  Passed      : {report['passed']}")
+    print(f"  Failed      : {report['failed']}")
+    print(f"  Pass rate   : {report['pass_rate']}%")
 
-    if report['duplicate_ids']:
-        print(f"\nDuplicate IDs ({len(report['duplicate_ids'])}):")
-        for tid in report['duplicate_ids'][:10]:
-            print(f"  - {tid}")
+    if report["duplicate_ids"]:
+        print(f"\n  Duplicate IDs ({len(report['duplicate_ids'])}):")
+        for tid in report["duplicate_ids"][:10]:
+            print(f"    - {tid}")
 
-    if report['errors']:
-        print(f"\nErrors (showing first 20):")
-        for err in report['errors'][:20]:
-            print(f"  ERROR: {err}")
+    if report["errors"]:
+        print(f"\n  Errors (first 20):")
+        for err in report["errors"][:20]:
+            print(f"    ERROR  {err}")
 
-    if report['warnings']:
-        print(f"\nWarnings (showing first 20):")
-        for warn in report['warnings'][:20]:
-            print(f"  WARN:  {warn}")
+    if report["warnings"]:
+        print(f"\n  Warnings (first 20):")
+        for w in report["warnings"][:20]:
+            print(f"    WARN   {w}")
 
-    print(f"{'='*60}\n")
+    print(sep)

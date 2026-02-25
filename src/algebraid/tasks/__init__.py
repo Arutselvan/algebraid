@@ -1,8 +1,8 @@
-"""ALGEBRAID Task-related utilities."""
+"""Task utilities: verbalization, verification, and validation."""
 
 from .verifier import check_answer, extract_answer, normalize_answer, parse_and_verify
 from .verbalizer import Verbalizer
-from .validator import TaskValidator, ValidationResult, validate_jsonl_file, print_validation_report
+from .validator import TaskValidator, ValidationResult, validate_file, print_report
 
 __all__ = [
     "check_answer",
@@ -12,6 +12,6 @@ __all__ = [
     "Verbalizer",
     "TaskValidator",
     "ValidationResult",
-    "validate_jsonl_file",
-    "print_validation_report",
+    "validate_file",
+    "print_report",
 ]

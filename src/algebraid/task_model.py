@@ -1,5 +1,6 @@
 """
-ALGEBRAID Task Model - Data structures for tasks, task sets, and evaluation dimensions.
+Core data structures: ``Task``, ``TaskSet``, ``TaskFamily``, and
+``CompositionDimension``.
 """
 
 from __future__ import annotations
@@ -106,8 +107,7 @@ class TaskSet:
                 data = json.loads(line)
                 data["family"] = TaskFamily(data["family"])
                 data["dimension"] = CompositionDimension(data["dimension"])
-                # skin is stored as a name string; drop it on load (not needed for eval)
-                data.pop("skin", None)
+                data.pop("skin", None)  # serialized as name string; not needed for eval
                 tasks.append(Task(**data))
         return cls(tasks)
 

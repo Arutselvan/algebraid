@@ -1,9 +1,9 @@
 """
-ALGEBRAID Symbolic Verifier.
+Symbolic answer verification.
 
-Provides answer-checking logic that handles multiple equivalent
-representations of the same algebraic element (e.g., "(1 2 3)" vs
-"(1, 2, 3)" vs "1 2 3"). Also supports LaTeX \\boxed{} extraction.
+Handles multiple equivalent representations of algebraic elements
+(e.g. ``(1 2 3)`` vs ``(1, 2, 3)``) and extracts answers from common
+model output formats including LaTeX ``\\boxed{}``.
 """
 
 import re

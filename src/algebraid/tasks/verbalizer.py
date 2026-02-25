@@ -1,9 +1,9 @@
-# ALGEBRAID Natural Language Diversity System.
-
 """
-Provides 50+ prompt template variants, entity name randomization, and
-multiple context frames to resist contamination and ensure that models
-are tested on reasoning rather than pattern-matching surface forms.
+Natural-language verbalization for ALGEBRAID tasks.
+
+Provides template-based prompt generation with multiple surface forms,
+entity-name randomization, and context frames to ensure that models are
+tested on reasoning rather than pattern matching.
 """
 
 from __future__ import annotations
@@ -16,9 +16,7 @@ from ..primitives.base import AlgebraicStructure
 from ..skins import SemanticSkin
 from ..composers.function_composition import AlgebraicOperation, ComposedFunction
 
-# ===========================================================================
-# Entity name pools (1000+ alternatives)
-# ===========================================================================
+# ── Entity-name pools ───────────────────────────────────────────────────────
 
 STRUCTURE_ALIASES: List[str] = [
     "system", "structure", "set with operation", "algebraic system",
@@ -89,47 +87,39 @@ CONTEXT_FRAMES: Dict[str, Dict[str, str]] = {
     },
 }
 
-# ===========================================================================
-# Template pools by task family
-# ===========================================================================
+# ── Template pools ──────────────────────────────────────────────────────────
 
 INTRA_TEMPLATES: List[Dict[str, str]] = [
-    # Template 0: Original (baseline)
     {
         "header": "Consider the algebraic structure {name} {short_desc}.",
         "start": "Starting with the element x = {x}, perform the following operations in order:",
         "step": "Step {i}: {op_desc}.",
         "footer": "What is the final result? Give only the answer.",
     },
-    # Template 1: Imperative
     {
         "header": "You are working in {name} {short_desc}.",
         "start": "Begin with x = {x}. Execute these operations sequentially:",
         "step": "{i}. {op_desc}",
         "footer": "Report the final value. Answer with just the number.",
     },
-    # Template 2: Narrative
     {
         "header": "In the algebraic structure {name} {short_desc}, a computation unfolds as follows:",
         "start": "The initial value is {x}. The following transformations are applied one after another:",
         "step": "Transformation {i}: {op_desc}.",
         "footer": "What value remains at the end? State only the answer.",
     },
-    # Template 3: Formal
     {
         "header": "Let G = {name} {short_desc}.",
         "start": "Given x_0 = {x}, compute x_{depth} by applying these steps in sequence:",
         "step": "Step {i}: {op_desc}. Call the result x_{i}.",
         "footer": "What is the value of x_{depth}? Provide the answer only.",
     },
-    # Template 4: Question-first
     {
         "header": "In the algebraic system {name} {short_desc}, what is the final result of the following sequence?",
         "start": "Start with {x} and apply these operations one by one, in order:",
         "step": "{i}) {op_desc}",
         "footer": "Final answer:",
     },
-    # Template 5: Conversational
     {
         "header": "I need help with a calculation in {name} {short_desc}.",
         "start": "If I start with {x} and do the following:",
@@ -270,10 +260,8 @@ class Verbalizer:
         return lines
 
     def _clean(self, text: str) -> str:
-        """Clean up common formatting issues in generated prompts."""
-        # Fix double periods but preserve set notation like {0, ..., n}
+        """Normalize whitespace and fix stray double-periods."""
         text = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', text)
-        # Fix trailing whitespace on lines
         text = "\n".join(line.rstrip() for line in text.split("\n"))
         return text
 
@@ -323,7 +311,6 @@ class Verbalizer:
         lines.append("")
         lines.append(tmpl["footer"].format(depth=depth))
 
-        # Optionally add context frame
         order = getattr(structure, 'n', getattr(structure, 'p', None))
         lines = self._maybe_add_context(lines, order)
 

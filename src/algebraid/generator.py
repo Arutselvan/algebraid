@@ -1,11 +1,8 @@
 """
-ALGEBRAID Task Generator.
+Procedural task generator.
 
-Procedurally generates tasks in four families:
-- Intra-structure: chain d operations on one group element
-- Inter-structure: apply operations to tuples across d+1 nested groups
-- Field arithmetic: evaluate a depth-d expression tree in GF(p)
-- Rule induction: infer a hidden d-step chain from input-output examples
+Produces tasks in four families: intra-structure composition,
+inter-structure composition, field arithmetic, and rule induction.
 """
 
 import random
@@ -85,7 +82,6 @@ def _generate_intra_structure_task(rng, depth, idx, seed, verbalizer, dimension=
     x = structure.random_element(rng)
     answer_raw = chain(x)
     answer_str = structure.element_to_str(answer_raw)
-    # If a skin is active, the answer should also be expressed in the skin's language
     answer_display = skin.element_name(answer_raw, structure) if skin else answer_str
     trace = chain.trace(x)
     prompt = verbalizer.verbalize_intra(structure, chain, x, skin=skin)
@@ -93,7 +89,7 @@ def _generate_intra_structure_task(rng, depth, idx, seed, verbalizer, dimension=
         task_id=_task_id(seed, "intra", depth, idx),
         prompt=prompt,
         answer=answer_display,
-        answer_raw=answer_str,  # always store the canonical algebraic answer for verification
+        answer_raw=answer_str,
         depth=depth,
         family=TaskFamily.INTRA_STRUCTURE,
         dimension=dimension,
@@ -246,9 +242,7 @@ def _generate_substitutivity_task(rng, depth, idx, seed, verbalizer):
     prompt += f"The operation on this structure follows the same rules as addition modulo {n}.\n"
     prompt += f"Starting with the element x = {label_map[x]}, perform the following operations in order:\n"
     for i, op in enumerate(chosen_ops, 1):
-        # Use the op's natural description but replace any numeric references with label equivalents
         desc = op.description
-        # Replace any raw element references in the description with their label equivalents
         for elem_int, label in label_map.items():
             desc = desc.replace(f" {elem_int} ", f" {label} ").replace(f"by {elem_int}", f"by {label}").replace(f"with {elem_int}", f"with {label}")
         prompt += f"Step {i}: {desc}.\n"
@@ -366,7 +360,7 @@ class AlgebraidGenerator:
 
         return TaskSet(
             tasks=all_tasks,
-            name=f"algebraid_seed{self.seed}",
+            name=f"algebraid_s{self.seed}",
             description=(
                 f"ALGEBRAID benchmark generated with seed={self.seed}. "
                 f"Depths: {depths}, families: {families}, "
@@ -402,7 +396,7 @@ class AlgebraidGenerator:
 
         return TaskSet(
             tasks=tasks,
-            name=f"algebraid_productivity_seed{self.seed}",
+            name=f"algebraid_productivity_s{self.seed}",
             description=f"ALGEBRAID productivity suite (depths 1-{max_depth}).",
             metadata={"seed": self.seed, "max_depth": max_depth},
         )

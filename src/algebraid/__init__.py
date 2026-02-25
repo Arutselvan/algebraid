@@ -1,12 +1,12 @@
 """
-ALGEBRAID: A Procedurally Generated Benchmark for Compositional Generalization
-Using Formal Algebraic Structures.
+ALGEBRAID — A procedurally generated benchmark for compositional
+generalization using formal algebraic structures.
 """
 
 from .generator import AlgebraidGenerator
 from .evaluator import AlgebraidEvaluator, EvalReport
 from .tasks.verifier import check_answer, extract_answer
-from .tasks.validator import TaskValidator, validate_jsonl_file, print_validation_report
+from .tasks.validator import TaskValidator, validate_file, print_report
 from .task_model import Task, TaskSet, TaskFamily, CompositionDimension
 from .complexity import compute_complexity, AlgebraicComplexity
 
@@ -19,8 +19,8 @@ __all__: list = [
     "check_answer",
     "extract_answer",
     "TaskValidator",
-    "validate_jsonl_file",
-    "print_validation_report",
+    "validate_file",
+    "print_report",
     "Task",
     "TaskSet",
     "TaskFamily",

@@ -1,4 +1,4 @@
-"""ALGEBRAID Algebraic Primitives."""
+"""Algebraic primitives: Z_n, S_n, D_n, and GF(p)."""
 
 from .cyclic_group import CyclicGroup
 from .symmetric_group import SymmetricGroup

@@ -1,28 +1,38 @@
 """
-ALGEBRAID Command-Line Interface.
+Command-line interface for ALGEBRAID.
 
-Provides four main commands:
-- `algebraid generate`: Generate a new task set.
-- `algebraid run`: Run a task set against a model.
-- `algebraid evaluate`: Evaluate model predictions.
-- `algebraid validate`: Validate a task set for quality issues.
+Commands
+--------
+generate   Create a new task set.
+run        Execute a task set against a language model.
+evaluate   Score model predictions against a task set.
+validate   Check a task set for structural or semantic issues.
 """
 
 import argparse
 import os
 import json
 import time
+from datetime import date
 
 from .generator import AlgebraidGenerator
 from .evaluator import AlgebraidEvaluator
 from .task_model import TaskSet
 from .adapters import get_adapter
-from .tasks.validator import TaskValidator, print_validation_report
+from .tasks.validator import TaskValidator, print_report
 
 
-def _generate_handler(args):
-    """Handle the `generate` subcommand."""
-    print(f"Generating task set with seed {args.seed}...")
+def _default_task_path(seed: int) -> str:
+    """Return a sensible default output path that encodes the seed."""
+    return f"./data/algebraid_s{seed}_{date.today():%Y%m%d}.jsonl"
+
+
+# ── generate ────────────────────────────────────────────────────────────────
+
+def _generate(args: argparse.Namespace) -> None:
+    output = args.output or _default_task_path(args.seed)
+    print(f"Generating task set (seed={args.seed}) ...")
+
     gen = AlgebraidGenerator(seed=args.seed)
     task_set = gen.generate(
         depths=args.depths,
@@ -30,32 +40,30 @@ def _generate_handler(args):
         families=args.families,
         include_dimensions=not args.no_dims,
     )
-    out_dir = os.path.dirname(args.output)
+
+    out_dir = os.path.dirname(output)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
-    task_set.to_jsonl(args.output)
-    print(f"Task set with {len(task_set)} tasks saved to {args.output}")
+    task_set.to_jsonl(output)
+    print(f"Saved {len(task_set)} tasks to {output}")
     print(task_set.summary())
 
-    # Auto-validate unless --skip-validation is set
     if not args.skip_validation:
-        print("Running post-generation validation...")
-        validator = TaskValidator()
-        report = validator.validate_taskset(task_set)
-        print_validation_report(report)
+        report = TaskValidator().validate_set(task_set)
+        print_report(report)
         if report["failed"] > 0:
-            print(f"WARNING: {report['failed']} tasks failed validation. Review errors above.")
+            print(f"WARNING: {report['failed']} task(s) failed validation.")
 
 
-def _run_handler(args):
-    """Handle the `run` subcommand."""
+# ── run ─────────────────────────────────────────────────────────────────────
+
+def _run(args: argparse.Namespace) -> None:
     if not os.path.exists(args.task_set):
-        print(f"Error: Task set file not found at {args.task_set}")
+        print(f"Error: file not found — {args.task_set}")
         return
 
-    print(f"Loading tasks from {args.task_set}...")
     task_set = TaskSet.from_jsonl(args.task_set)
-    print(f"Running {len(task_set)} tasks on model: {args.model}")
+    print(f"Running {len(task_set)} tasks on {args.model} ...")
 
     Adapter = get_adapter(args.adapter)
     adapter = Adapter(
@@ -66,10 +74,9 @@ def _run_handler(args):
         verbose=not args.quiet,
     )
 
-    start_time = time.time()
+    t0 = time.time()
     predictions = adapter.run_tasks(task_set)
-    elapsed = time.time() - start_time
-    print(f"Completed in {elapsed:.1f}s")
+    print(f"Completed in {time.time() - t0:.1f}s")
 
     out_dir = os.path.dirname(args.output)
     if out_dir:
@@ -79,21 +86,18 @@ def _run_handler(args):
     print(f"Predictions saved to {args.output}")
 
 
-def _evaluate_handler(args):
-    """Handle the `evaluate` subcommand."""
-    if not os.path.exists(args.task_set):
-        print(f"Error: Task set file not found at {args.task_set}")
-        return
-    if not os.path.exists(args.predictions):
-        print(f"Error: Predictions file not found at {args.predictions}")
-        return
+# ── evaluate ────────────────────────────────────────────────────────────────
 
-    print("Loading tasks and predictions...")
+def _evaluate(args: argparse.Namespace) -> None:
+    for path, label in [(args.task_set, "Task set"), (args.predictions, "Predictions")]:
+        if not os.path.exists(path):
+            print(f"Error: {label} not found — {path}")
+            return
+
     task_set = TaskSet.from_jsonl(args.task_set)
     with open(args.predictions) as f:
         predictions = json.load(f)
 
-    print("Evaluating...")
     evaluator = AlgebraidEvaluator(strict=args.strict)
     report = evaluator.evaluate(task_set, predictions, model_name=args.model_name)
 
@@ -102,22 +106,21 @@ def _evaluate_handler(args):
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
         report.save(args.output)
-        print(f"Evaluation report saved to {args.output}")
+        print(f"Report saved to {args.output}")
 
     report.print_summary()
 
 
-def _validate_handler(args):
-    """Handle the `validate` subcommand."""
+# ── validate ────────────────────────────────────────────────────────────────
+
+def _validate(args: argparse.Namespace) -> None:
     if not os.path.exists(args.task_set):
-        print(f"Error: Task set file not found at {args.task_set}")
+        print(f"Error: file not found — {args.task_set}")
         return
 
-    print(f"Validating task set: {args.task_set}")
     task_set = TaskSet.from_jsonl(args.task_set)
-    validator = TaskValidator()
-    report = validator.validate_taskset(task_set)
-    print_validation_report(report)
+    report = TaskValidator().validate_set(task_set)
+    print_report(report)
 
     if args.output:
         out_dir = os.path.dirname(args.output)
@@ -125,98 +128,72 @@ def _validate_handler(args):
             os.makedirs(out_dir, exist_ok=True)
         with open(args.output, "w") as f:
             json.dump(report, f, indent=2)
-        print(f"Validation report saved to {args.output}")
+        print(f"Report saved to {args.output}")
 
 
-def main():
+# ── entry point ─────────────────────────────────────────────────────────────
+
+def main() -> None:
     parser = argparse.ArgumentParser(
         prog="algebraid",
-        description="ALGEBRAID: A procedurally generated benchmark for compositional generalization.",
+        description="ALGEBRAID — procedurally generated benchmark for compositional generalization.",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    # ── generate ──────────────────────────────────────────────────────────────
-    p_gen = subparsers.add_parser("generate", help="Generate a new task set.")
-    p_gen.add_argument(
-        "-o", "--output", default="./data/task_set.jsonl",
-        help="Output path for task set JSONL file. (default: ./data/task_set.jsonl)"
-    )
-    p_gen.add_argument("--seed", type=int, default=42, help="Random seed. (default: 42)")
-    p_gen.add_argument(
-        "--depths", type=int, nargs="+", default=[1, 2, 3, 4],
-        help="Composition depths to generate. (default: 1 2 3 4)"
-    )
-    p_gen.add_argument(
-        "--tasks-per-depth", type=int, default=50,
-        help="Tasks per depth/family combination. (default: 50)"
-    )
-    p_gen.add_argument(
-        "--families", nargs="+", default=["intra", "inter", "field", "rule"],
-        help="Task families: intra inter field rule. (default: all)"
-    )
-    p_gen.add_argument(
-        "--no-dims", action="store_true",
-        help="Exclude Hupkes compositionality dimensions."
-    )
-    p_gen.add_argument(
-        "--skip-validation", action="store_true",
-        help="Skip post-generation validation."
-    )
-    p_gen.set_defaults(func=_generate_handler)
+    # generate
+    p = sub.add_parser("generate", help="Generate a new task set.")
+    p.add_argument("-o", "--output", default=None,
+                   help="Output JSONL path. Default: ./data/algebraid_s{seed}_{date}.jsonl")
+    p.add_argument("--seed", type=int, default=42, help="Random seed (default: 42).")
+    p.add_argument("--depths", type=int, nargs="+", default=[1, 2, 3, 4],
+                   help="Composition depths (default: 1 2 3 4).")
+    p.add_argument("--tasks-per-depth", type=int, default=50,
+                   help="Tasks per depth/family (default: 50).")
+    p.add_argument("--families", nargs="+", default=["intra", "inter", "field", "rule"],
+                   help="Task families (default: intra inter field rule).")
+    p.add_argument("--no-dims", action="store_true",
+                   help="Exclude Hupkes compositionality dimensions.")
+    p.add_argument("--skip-validation", action="store_true",
+                   help="Skip post-generation validation.")
+    p.set_defaults(func=_generate)
 
-    # ── run ───────────────────────────────────────────────────────────────────
-    p_run = subparsers.add_parser("run", help="Run a task set against a model.")
-    p_run.add_argument("task_set", help="Path to the task set JSONL file.")
-    p_run.add_argument(
-        "-o", "--output", default="./results/predictions.json",
-        help="Output path for predictions JSON. (default: ./results/predictions.json)"
-    )
-    p_run.add_argument(
-        "-a", "--adapter", default="openai",
-        help="Adapter to use: openai | anthropic | huggingface | custom_http. (default: openai)"
-    )
-    p_run.add_argument(
-        "-m", "--model", default="gpt-4.1-nano",
-        help="Model name to query. (default: gpt-4.1-nano)"
-    )
-    p_run.add_argument(
-        "-t", "--temperature", type=float, default=0.0,
-        help="Sampling temperature. (default: 0.0)"
-    )
-    p_run.add_argument(
-        "--max-tokens", type=int, default=512,
-        help="Max tokens per response. (default: 512)"
-    )
-    p_run.add_argument(
-        "--delay", type=float, default=0.5,
-        help="Delay between API calls in seconds. (default: 0.5)"
-    )
-    p_run.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output.")
-    p_run.set_defaults(func=_run_handler)
+    # run
+    p = sub.add_parser("run", help="Run tasks against a model.")
+    p.add_argument("task_set", help="Path to the task set JSONL.")
+    p.add_argument("-o", "--output", default="./results/predictions.json",
+                   help="Output predictions JSON (default: ./results/predictions.json).")
+    p.add_argument("-a", "--adapter", default="openai",
+                   help="Adapter: openai | anthropic | huggingface | custom_http.")
+    p.add_argument("-m", "--model", default="gpt-4.1-nano",
+                   help="Model identifier (default: gpt-4.1-nano).")
+    p.add_argument("-t", "--temperature", type=float, default=0.0,
+                   help="Sampling temperature (default: 0.0).")
+    p.add_argument("--max-tokens", type=int, default=512,
+                   help="Max response tokens (default: 512).")
+    p.add_argument("--delay", type=float, default=0.5,
+                   help="Delay between API calls in seconds (default: 0.5).")
+    p.add_argument("-q", "--quiet", action="store_true",
+                   help="Suppress per-task progress output.")
+    p.set_defaults(func=_run)
 
-    # ── evaluate ──────────────────────────────────────────────────────────────
-    p_eval = subparsers.add_parser("evaluate", help="Evaluate model predictions against a task set.")
-    p_eval.add_argument("task_set", help="Path to the task set JSONL file.")
-    p_eval.add_argument("predictions", help="Path to the predictions JSON file.")
-    p_eval.add_argument(
-        "-o", "--output", default="./results/report.json",
-        help="Output path for the evaluation report JSON. (default: ./results/report.json)"
-    )
-    p_eval.add_argument(
-        "--model-name", default="unknown_model",
-        help="Display name of the model for the report."
-    )
-    p_eval.add_argument("--strict", action="store_true", help="Enable strict answer matching.")
-    p_eval.set_defaults(func=_evaluate_handler)
+    # evaluate
+    p = sub.add_parser("evaluate", help="Score predictions against a task set.")
+    p.add_argument("task_set", help="Path to the task set JSONL.")
+    p.add_argument("predictions", help="Path to the predictions JSON.")
+    p.add_argument("-o", "--output", default="./results/report.json",
+                   help="Output report JSON (default: ./results/report.json).")
+    p.add_argument("--model-name", default="unknown",
+                   help="Model display name for the report.")
+    p.add_argument("--strict", action="store_true",
+                   help="Enable strict answer matching.")
+    p.set_defaults(func=_evaluate)
 
-    # ── validate ──────────────────────────────────────────────────────────────
-    p_val = subparsers.add_parser("validate", help="Validate a task set for quality issues.")
-    p_val.add_argument("task_set", help="Path to the task set JSONL file.")
-    p_val.add_argument(
-        "-o", "--output", default=None,
-        help="Output path for validation report JSON. (default: print only)"
-    )
-    p_val.set_defaults(func=_validate_handler)
+    # validate
+    p = sub.add_parser("validate", help="Validate a task set for quality issues.")
+    p.add_argument("task_set", help="Path to the task set JSONL.")
+    p.add_argument("-o", "--output", default=None,
+                   help="Output validation report JSON (default: stdout only).")
+    p.set_defaults(func=_validate)
 
     args = parser.parse_args()
     args.func(args)

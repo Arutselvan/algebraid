@@ -1,81 +1,76 @@
 """
-ALGEBRAID Semantic Skin System.
+Semantic skin system for ALGEBRAID.
 
-Provides coherent, real-world narrative layers (skins) that can be applied to
-abstract algebraic tasks. Each skin translates:
-  - The structure name into a real-world domain (e.g. "a 12-hour clock")
-  - Elements into domain objects (e.g. "3 o'clock")
-  - Operations into domain actions (e.g. "move forward by 5 hours")
+A *skin* wraps an abstract algebraic structure in a coherent real-world
+narrative so that the same mathematical task can be presented in many
+surface forms.  Each skin translates three things:
 
-Skins are designed to remain coherent when operations are chained and nested,
-so the model reads a flowing narrative rather than abstract symbols.
+    1. The structure itself  — e.g. Z_12 becomes "a 12-hour clock".
+    2. Individual elements   — e.g. 3 becomes "3 o'clock".
+    3. Operations            — e.g. right_mul_5 becomes "advance by 5 hours".
 
-IMPORTANT: The power_N operation computes x ∗ x ∗ ... ∗ x (N times), which
-for additive groups (Z_n) means N*x mod n (scalar multiplication), NOT x+N.
-All skin descriptions must accurately reflect this distinction.
+Ten skins are provided, covering cyclic groups, symmetric groups,
+dihedral groups, and finite fields.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from .primitives.base import AlgebraicStructure
 
 
+# ── Abstract base ───────────────────────────────────────────────────────────
+
 class SemanticSkin(ABC):
-    """Abstract base class for a semantic narrative layer."""
+    """Base class for all semantic skins."""
 
     @property
     @abstractmethod
     def name(self) -> str:
-        """The unique name of the skin, e.g., 'Clock Arithmetic'."""
-        pass
+        """Human-readable skin name."""
 
     @abstractmethod
     def structure_name(self, structure: AlgebraicStructure) -> str:
-        """Narrative name for the structure, e.g., 'a 12-hour clock'."""
-        pass
+        """Narrative name for the algebraic structure."""
 
     @abstractmethod
     def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
-        """Narrative name for an element, e.g., '3 o\'clock'."""
-        pass
+        """Narrative name for a single element."""
 
     @abstractmethod
     def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
-        """Narrative description for an operation, e.g., 'move forward by 2 hours'."""
-        pass
+        """Narrative description of an operation step."""
 
 
-# ===========================================================================
-# CyclicGroup Skins
-# ===========================================================================
+# ═══════════════════════════════════════════════════════════════════════════
+# Cyclic-group skins  (Z_n — additive)
+#
+# Semantics reminder
+#   op(a, b)    = a + b mod n
+#   inverse(a)  = −a mod n
+#   power_k(x)  = k·x mod n   (scalar multiplication, NOT x + k)
+# ═══════════════════════════════════════════════════════════════════════════
 
 class ClockArithmeticSkin(SemanticSkin):
-    """Z_n as a clock face with n positions (0 to n-1).
-
-    Key semantics for Z_n (additive group):
-    - op(a, b) = a + b mod n  →  "advance by b"
-    - inverse(a) = -a mod n   →  "move backward"
-    - power_k(x) = k*x mod n  →  "multiply the current position by k"
-    """
+    """Z_n presented as positions on an n-hour clock."""
 
     @property
     def name(self) -> str:
         return "Clock Arithmetic"
 
-    def structure_name(self, structure: AlgebraicStructure) -> str:
+    def structure_name(self, structure):
         return f"a {structure.n}-position clock (positions 0 to {structure.n - 1})"
 
-    def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
+    def element_name(self, element, structure):
         return f"position {element}"
 
-    def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
+    def op_description(self, op_name, fixed_args, structure):
         n = structure.n
         if op_name == "inverse":
-            return "move to the position that is the additive inverse (i.e., the position that sums to 0)"
+            return "move to the additive inverse (the position that sums to 0)"
         if "conj" in op_name and fixed_args:
             k = fixed_args[0]
-            return f"apply the conjugation by {k} (compute {k} + x + ({n} - {k}) mod {n})"
+            return f"conjugate by {k} (compute {k} + x + ({n} - {k}) mod {n})"
         if "mul" in op_name and fixed_args:
             k = fixed_args[0]
             return f"advance the clock by {k} position{'s' if k != 1 else ''} (add {k} mod {n})"
@@ -86,34 +81,29 @@ class ClockArithmeticSkin(SemanticSkin):
 
 
 class MusicIntervalsSkin(SemanticSkin):
-    """Z_n as a chromatic musical scale with n tones.
+    """Z_n presented as tones on a chromatic scale."""
 
-    Key semantics for Z_n (additive group):
-    - op(a, b) = a + b mod n  →  "ascend by b semitones"
-    - power_k(x) = k*x mod n  →  "multiply the tone number by k"
-    """
-
-    NOTES_12 = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    _NOTES_12 = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
     @property
     def name(self) -> str:
         return "Musical Intervals"
 
-    def structure_name(self, structure: AlgebraicStructure) -> str:
+    def structure_name(self, structure):
         return f"a {structure.n}-tone musical scale"
 
-    def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
+    def element_name(self, element, structure):
         if structure.n == 12:
-            return self.NOTES_12[element % 12]
+            return self._NOTES_12[element % 12]
         return f"tone {element}"
 
-    def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
+    def op_description(self, op_name, fixed_args, structure):
         n = structure.n
         if op_name == "inverse":
-            return "find the tone that is the additive inverse (the tone that sums to 0)"
+            return "find the additive inverse tone (the tone that sums to 0)"
         if "conj" in op_name and fixed_args:
             k = fixed_args[0]
-            return f"apply the interval transformation by {k} (conjugation mod {n})"
+            return f"apply interval conjugation by {k} (mod {n})"
         if "mul" in op_name and fixed_args:
             k = fixed_args[0]
             return f"ascend by {k} semitone{'s' if k != 1 else ''} (add {k} mod {n})"
@@ -124,30 +114,25 @@ class MusicIntervalsSkin(SemanticSkin):
 
 
 class RobotStepsSkin(SemanticSkin):
-    """Z_n as a robot moving in n discrete positions around a circular track.
-
-    Key semantics for Z_n (additive group):
-    - op(a, b) = a + b mod n  →  "move forward by b stops"
-    - power_k(x) = k*x mod n  →  "multiply the stop number by k"
-    """
+    """Z_n presented as stops on a circular track."""
 
     @property
     def name(self) -> str:
         return "Robot Steps"
 
-    def structure_name(self, structure: AlgebraicStructure) -> str:
-        return f"a circular track with {structure.n} equally-spaced stops (numbered 0 to {structure.n - 1})"
+    def structure_name(self, structure):
+        return f"a circular track with {structure.n} stops (numbered 0 to {structure.n - 1})"
 
-    def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
+    def element_name(self, element, structure):
         return f"stop {element}"
 
-    def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
+    def op_description(self, op_name, fixed_args, structure):
         n = structure.n
         if op_name == "inverse":
-            return "move to the stop that is the additive inverse (the stop that sums to 0)"
+            return "move to the additive inverse stop (the stop that sums to 0)"
         if "conj" in op_name and fixed_args:
             k = fixed_args[0]
-            return f"apply the track transformation by {k} stop{'s' if k != 1 else ''} (conjugation mod {n})"
+            return f"apply track conjugation by {k} stop{'s' if k != 1 else ''} (mod {n})"
         if "mul" in op_name and fixed_args:
             k = fixed_args[0]
             return f"move forward by {k} stop{'s' if k != 1 else ''} (add {k} mod {n})"
@@ -158,34 +143,29 @@ class RobotStepsSkin(SemanticSkin):
 
 
 class ColorWheelSkin(SemanticSkin):
-    """Z_n as positions on a color wheel.
+    """Z_n presented as hues on a color wheel."""
 
-    Key semantics for Z_n (additive group):
-    - op(a, b) = a + b mod n  →  "rotate by b hues"
-    - power_k(x) = k*x mod n  →  "multiply the hue number by k"
-    """
-
-    COLORS_8 = ["red", "orange", "yellow", "chartreuse", "green", "teal", "blue", "violet"]
+    _COLORS_8 = ["red", "orange", "yellow", "chartreuse", "green", "teal", "blue", "violet"]
 
     @property
     def name(self) -> str:
         return "Color Wheel"
 
-    def structure_name(self, structure: AlgebraicStructure) -> str:
+    def structure_name(self, structure):
         return f"a color wheel with {structure.n} hues"
 
-    def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
+    def element_name(self, element, structure):
         if structure.n == 8:
-            return self.COLORS_8[element % 8]
+            return self._COLORS_8[element % 8]
         return f"hue {element}"
 
-    def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
+    def op_description(self, op_name, fixed_args, structure):
         n = structure.n
         if op_name == "inverse":
-            return "find the hue that is the additive inverse (the hue that sums to 0)"
+            return "find the additive inverse hue (the hue that sums to 0)"
         if "conj" in op_name and fixed_args:
             k = fixed_args[0]
-            return f"apply the color transformation by {k} hue{'s' if k != 1 else ''} (conjugation mod {n})"
+            return f"apply color conjugation by {k} hue{'s' if k != 1 else ''} (mod {n})"
         if "mul" in op_name and fixed_args:
             k = fixed_args[0]
             return f"rotate the wheel forward by {k} hue{'s' if k != 1 else ''} (add {k} mod {n})"
@@ -195,126 +175,114 @@ class ColorWheelSkin(SemanticSkin):
         return "rotate forward by one hue"
 
 
-# ===========================================================================
-# SymmetricGroup Skins
-# ===========================================================================
+# ═══════════════════════════════════════════════════════════════════════════
+# Symmetric-group skins  (S_n — permutation composition)
+#
+# Elements are 1-indexed tuples, e.g. S_3 identity = (1, 2, 3).
+#   op(a, b)    = a composed with b
+#   power_k(x)  = x composed with itself k times
+# ═══════════════════════════════════════════════════════════════════════════
 
 class DeckOfCardsSkin(SemanticSkin):
-    """S_n as rearrangements of n cards.
-
-    IMPORTANT: S_n elements are 1-indexed tuples, e.g. (1,2,3) for the identity
-    of S_3. Card names map 1→Card 1, 2→Card 2, etc. to avoid off-by-one confusion.
-
-    Key semantics for S_n (composition):
-    - op(a, b) = a ∘ b  →  "apply shuffle b, then shuffle a"
-    - power_k(x) = x ∘ x ∘ ... ∘ x (k times)  →  "apply the current arrangement as a shuffle k times"
-    """
-
-    def _card_label(self, i: int, n: int) -> str:
-        """Map a 1-indexed position to a card name."""
-        # Use simple numbered cards for clarity
-        return f"Card {i}"
+    """S_n presented as shuffles of a deck of n cards."""
 
     @property
     def name(self) -> str:
         return "Deck of Cards"
 
-    def structure_name(self, structure: AlgebraicStructure) -> str:
+    def structure_name(self, structure):
         return f"a deck of {structure.n} cards (Card 1 through Card {structure.n})"
 
-    def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
+    def element_name(self, element, structure):
         if isinstance(element, (list, tuple)):
-            labels = [self._card_label(i, structure.n) for i in element]
-            return "[" + ", ".join(labels) + "]"
+            return "[" + ", ".join(f"Card {i}" for i in element) + "]"
         return str(element)
 
-    def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
+    def op_description(self, op_name, fixed_args, structure):
         if op_name == "inverse":
             return "undo the last shuffle (find the inverse permutation)"
         if "conj" in op_name and fixed_args:
             perm = fixed_args[0]
             if isinstance(perm, (list, tuple)):
-                labels = [self._card_label(i, structure.n) for i in perm]
-                return f"conjugate by the shuffle [{', '.join(labels)}]"
+                label = "[" + ", ".join(f"Card {i}" for i in perm) + "]"
+                return f"conjugate by the shuffle {label}"
             return f"conjugate by the shuffle {perm}"
         if "mul" in op_name and fixed_args:
             perm = fixed_args[0]
             if isinstance(perm, (list, tuple)):
-                labels = [self._card_label(i, structure.n) for i in perm]
-                return f"apply the shuffle [{', '.join(labels)}] (compose on the right)"
+                label = "[" + ", ".join(f"Card {i}" for i in perm) + "]"
+                return f"apply the shuffle {label} (compose on the right)"
             return f"apply the shuffle {perm}"
         if "power" in op_name and fixed_args:
             k = fixed_args[0]
-            return f"compose the current arrangement with itself {k} time{'s' if k != 1 else ''} (apply it as a shuffle {k} time{'s' if k != 1 else ''})"
+            return (
+                f"compose the current arrangement with itself "
+                f"{k} time{'s' if k != 1 else ''} "
+                f"(apply it as a shuffle {k} time{'s' if k != 1 else ''})"
+            )
         return "apply a shuffle"
 
 
 class SeatingSkin(SemanticSkin):
-    """S_n as seating arrangements of n people.
+    """S_n presented as seating arrangements of named people."""
 
-    IMPORTANT: S_n elements are 1-indexed. Person names map 1→Alice, 2→Bob, etc.
+    _NAMES = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Hank"]
 
-    Key semantics for S_n (composition):
-    - power_k(x) = x^k  →  "apply the current rearrangement k times in succession"
-    """
-
-    NAMES = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Hank"]
-
-    def _person_name(self, i: int) -> str:
-        """Map a 1-indexed position to a person name."""
-        idx = i - 1  # Convert 1-indexed to 0-indexed
-        if 0 <= idx < len(self.NAMES):
-            return self.NAMES[idx]
+    def _person(self, i: int) -> str:
+        """Map a 1-indexed element value to a person name."""
+        idx = i - 1
+        if 0 <= idx < len(self._NAMES):
+            return self._NAMES[idx]
         return f"Person {i}"
 
     @property
     def name(self) -> str:
         return "Seating Arrangements"
 
-    def structure_name(self, structure: AlgebraicStructure) -> str:
-        names = [self._person_name(i) for i in range(1, structure.n + 1)]
+    def structure_name(self, structure):
+        names = [self._person(i) for i in range(1, structure.n + 1)]
         return f"the possible seating arrangements of {', '.join(names)}"
 
-    def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
+    def element_name(self, element, structure):
         if isinstance(element, (list, tuple)):
-            labels = [self._person_name(i) for i in element]
-            return "[" + ", ".join(labels) + "]"
+            return "[" + ", ".join(self._person(i) for i in element) + "]"
         return str(element)
 
-    def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
+    def op_description(self, op_name, fixed_args, structure):
         if op_name == "inverse":
             return "reverse the last rearrangement (find the inverse permutation)"
         if "conj" in op_name and fixed_args:
             perm = fixed_args[0]
             if isinstance(perm, (list, tuple)):
-                labels = [self._person_name(i) for i in perm]
-                return f"conjugate by the rearrangement [{', '.join(labels)}]"
+                label = "[" + ", ".join(self._person(i) for i in perm) + "]"
+                return f"conjugate by the rearrangement {label}"
             return f"conjugate by the rearrangement {perm}"
         if "mul" in op_name and fixed_args:
             perm = fixed_args[0]
             if isinstance(perm, (list, tuple)):
-                labels = [self._person_name(i) for i in perm]
-                return f"rearrange seats to [{', '.join(labels)}] (compose on the right)"
+                label = "[" + ", ".join(self._person(i) for i in perm) + "]"
+                return f"rearrange seats to {label} (compose on the right)"
             return f"rearrange seats to {perm}"
         if "power" in op_name and fixed_args:
             k = fixed_args[0]
-            return f"apply the current seating rearrangement {k} time{'s' if k != 1 else ''} in succession"
+            return (
+                f"apply the current seating rearrangement "
+                f"{k} time{'s' if k != 1 else ''} in succession"
+            )
         return "rearrange the seats"
 
 
-# ===========================================================================
-# DihedralGroup Skins
-# ===========================================================================
+# ═══════════════════════════════════════════════════════════════════════════
+# Dihedral-group skins  (D_n — symmetries of a regular n-gon)
+#
+# Elements are (rotation_index, reflection_flag) pairs.
+#   power_k(x) = x composed with itself k times in D_n
+# ═══════════════════════════════════════════════════════════════════════════
 
 class PolygonSymmetriesSkin(SemanticSkin):
-    """D_n as symmetries of a regular n-gon.
+    """D_n presented as symmetries of a regular polygon."""
 
-    Key semantics for D_n:
-    - Elements are (r, s) where r=rotation index, s=reflection flag
-    - power_k(x) = x * x * ... * x (k times in D_n)  →  "apply the current symmetry k times"
-    """
-
-    POLYGON_NAMES = {
+    _POLYGON = {
         3: "triangle", 4: "square", 5: "pentagon", 6: "hexagon",
         7: "heptagon", 8: "octagon", 9: "nonagon", 10: "decagon",
     }
@@ -323,22 +291,18 @@ class PolygonSymmetriesSkin(SemanticSkin):
     def name(self) -> str:
         return "Polygon Symmetries"
 
-    def structure_name(self, structure: AlgebraicStructure) -> str:
-        poly = self.POLYGON_NAMES.get(structure.n, f"{structure.n}-gon")
+    def structure_name(self, structure):
+        poly = self._POLYGON.get(structure.n, f"{structure.n}-gon")
         return f"the symmetry group of a regular {poly}"
 
-    def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
+    def element_name(self, element, structure):
         r, s = element
         angle = round(360 * r / structure.n)
         if s == 0:
-            if r == 0:
-                return "no transformation (identity)"
-            return f"rotation by {angle} degrees"
-        if r == 0:
-            return "reflection (across the primary axis)"
-        return f"reflection, then rotation by {angle} degrees"
+            return "no transformation (identity)" if r == 0 else f"rotation by {angle} degrees"
+        return "reflection (across the primary axis)" if r == 0 else f"reflection, then rotation by {angle} degrees"
 
-    def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
+    def op_description(self, op_name, fixed_args, structure):
         if op_name == "inverse":
             return "undo the last symmetry (find the inverse transformation)"
         if "conj" in op_name and fixed_args:
@@ -351,12 +315,8 @@ class PolygonSymmetriesSkin(SemanticSkin):
             r, s = fixed_args[0]
             angle = round(360 * r / structure.n)
             if s == 0:
-                if r == 0:
-                    return "apply the identity (no change)"
-                return f"rotate by {angle} degrees"
-            if r == 0:
-                return "reflect across the primary axis"
-            return f"reflect, then rotate by {angle} degrees"
+                return "apply the identity (no change)" if r == 0 else f"rotate by {angle} degrees"
+            return "reflect across the primary axis" if r == 0 else f"reflect, then rotate by {angle} degrees"
         if "power" in op_name and fixed_args:
             k = fixed_args[0]
             return f"compose the current transformation with itself {k} time{'s' if k != 1 else ''}"
@@ -364,31 +324,22 @@ class PolygonSymmetriesSkin(SemanticSkin):
 
 
 class TileFlipSkin(SemanticSkin):
-    """D_n as flipping and rotating a tile.
-
-    Key semantics for D_n:
-    - power_k(x) = x^k in D_n  →  "apply the current tile orientation k times"
-    """
+    """D_n presented as orientations of a regular tile."""
 
     @property
     def name(self) -> str:
         return "Tile Flips and Rotations"
 
-    def structure_name(self, structure: AlgebraicStructure) -> str:
-        return f"the {2 * structure.n} ways to orient a regular tile with {structure.n} sides"
+    def structure_name(self, structure):
+        return f"the {2 * structure.n} orientations of a regular {structure.n}-sided tile"
 
-    def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
+    def element_name(self, element, structure):
         r, s = element
-        steps = r
         if s == 0:
-            if r == 0:
-                return "original orientation"
-            return f"rotated {steps} notch{'es' if steps != 1 else ''} clockwise"
-        if r == 0:
-            return "flipped (no rotation)"
-        return f"flipped, then rotated {steps} notch{'es' if steps != 1 else ''} clockwise"
+            return "original orientation" if r == 0 else f"rotated {r} notch{'es' if r != 1 else ''} clockwise"
+        return "flipped (no rotation)" if r == 0 else f"flipped, then rotated {r} notch{'es' if r != 1 else ''} clockwise"
 
-    def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
+    def op_description(self, op_name, fixed_args, structure):
         if op_name == "inverse":
             return "undo the last move (find the inverse orientation)"
         if "conj" in op_name and fixed_args:
@@ -399,41 +350,34 @@ class TileFlipSkin(SemanticSkin):
         if "mul" in op_name and fixed_args:
             r, s = fixed_args[0]
             if s == 0:
-                if r == 0:
-                    return "apply the identity (no change)"
-                return f"rotate {r} notch{'es' if r != 1 else ''} clockwise"
-            if r == 0:
-                return "flip the tile"
-            return f"flip the tile, then rotate {r} notch{'es' if r != 1 else ''} clockwise"
+                return "apply the identity (no change)" if r == 0 else f"rotate {r} notch{'es' if r != 1 else ''} clockwise"
+            return "flip the tile" if r == 0 else f"flip, then rotate {r} notch{'es' if r != 1 else ''} clockwise"
         if "power" in op_name and fixed_args:
             k = fixed_args[0]
             return f"apply the current tile orientation {k} time{'s' if k != 1 else ''} in succession"
         return "apply a tile move"
 
 
-# ===========================================================================
-# FiniteField Skins
-# ===========================================================================
+# ═══════════════════════════════════════════════════════════════════════════
+# Finite-field skins  (GF(p) — additive group)
+#
+# Same scalar-multiplication semantics as Z_n for power_k.
+# ═══════════════════════════════════════════════════════════════════════════
 
 class SecretCodesSkin(SemanticSkin):
-    """GF(p) as a secret code system with p symbols.
-
-    Key semantics for GF(p) (additive group):
-    - op(a, b) = a + b mod p  →  "shift code by adding b"
-    - power_k(x) = k*x mod p  →  "multiply the code value by k"
-    """
+    """GF(p) presented as a secret-code system with p symbols."""
 
     @property
     def name(self) -> str:
         return "Secret Codes"
 
-    def structure_name(self, structure: AlgebraicStructure) -> str:
+    def structure_name(self, structure):
         return f"a secret code system with {structure.p} symbols (0 to {structure.p - 1})"
 
-    def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
+    def element_name(self, element, structure):
         return f"code {element}"
 
-    def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
+    def op_description(self, op_name, fixed_args, structure):
         p = structure.p
         if op_name == "inverse":
             return f"find the decryption key (additive inverse mod {p})"
@@ -453,29 +397,25 @@ class SecretCodesSkin(SemanticSkin):
 
 
 class ModularArithmeticSkin(SemanticSkin):
-    """GF(p) as modular arithmetic with p residues.
-
-    Key semantics for GF(p) (additive group):
-    - power_k(x) = k*x mod p  →  "multiply by k"
-    """
+    """GF(p) presented as plain modular arithmetic."""
 
     @property
     def name(self) -> str:
         return "Modular Arithmetic"
 
-    def structure_name(self, structure: AlgebraicStructure) -> str:
+    def structure_name(self, structure):
         return f"arithmetic modulo {structure.p}"
 
-    def element_name(self, element: Any, structure: AlgebraicStructure) -> str:
+    def element_name(self, element, structure):
         return str(element)
 
-    def op_description(self, op_name: str, fixed_args: Tuple, structure: AlgebraicStructure) -> str:
+    def op_description(self, op_name, fixed_args, structure):
         p = structure.p
         if op_name == "inverse":
             return f"take the additive inverse (negate mod {p})"
         if "conj" in op_name and fixed_args:
             k = fixed_args[0]
-            return f"apply conjugation by {k} (compute {k} + x + ({p} - {k}) mod {p})"
+            return f"conjugate by {k} (compute {k} + x + ({p} - {k}) mod {p})"
         if "left_mul" in op_name and fixed_args:
             k = fixed_args[0]
             return f"add {k} (mod {p})"
@@ -488,9 +428,9 @@ class ModularArithmeticSkin(SemanticSkin):
         return "apply a modular operation"
 
 
-# ===========================================================================
-# Skin Registry
-# ===========================================================================
+# ═══════════════════════════════════════════════════════════════════════════
+# Registry
+# ═══════════════════════════════════════════════════════════════════════════
 
 SKIN_REGISTRY: Dict[str, List[SemanticSkin]] = {
     "CyclicGroup": [

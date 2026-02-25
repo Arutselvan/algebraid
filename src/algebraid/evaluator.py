@@ -1,13 +1,8 @@
 """
-ALGEBRAID Evaluator - Multi-Dimensional Evaluation Suite.
+Multi-dimensional evaluation suite.
 
-Computes accuracy metrics across multiple axes:
-- Overall accuracy
-- Accuracy by composition depth (the primary "depth curve")
-- Accuracy by task family
-- Accuracy by Hupkes compositionality dimension
-- Compositional ceiling (max depth where accuracy >= threshold)
-- Algebraic Complexity Metrics (H_alg, D_comm, O_c, I_s)
+Scores model predictions along composition depth, task family, Hupkes
+compositionality dimension, and four algebraic complexity metrics.
 """
 
 from typing import Dict, List, Any, Optional, Tuple

@@ -1,8 +1,8 @@
 """
-Model adapters for running ALGEBRAID tasks on various LLM providers.
+Model adapters for querying language-model APIs.
 
-Each adapter must implement a `run_tasks` function that takes a TaskSet and
-model parameters, and returns a dictionary of predictions.
+Each adapter implements ``run_tasks`` to execute a ``TaskSet`` against a
+specific provider and return a ``{task_id: response}`` dictionary.
 """
 
 import os

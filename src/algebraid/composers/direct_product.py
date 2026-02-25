@@ -1,9 +1,7 @@
 """
-Direct Product Composer - constructs G x H from two algebraic structures.
+Direct product G x H of two algebraic structures.
 
-The direct product is the simplest way to compose two groups. Elements are
-pairs (g, h) and operations are applied component-wise. This creates tasks
-that require tracking two independent computations simultaneously.
+Elements are pairs (g, h) with component-wise operations.
 """
 
 from typing import Any, List, Tuple, Optional
