@@ -12,8 +12,10 @@ validate   Check a task set for structural or semantic issues.
 import argparse
 import os
 import json
+import re
 import time
 from datetime import date
+from pathlib import Path
 
 from .generator import AlgebraidGenerator
 from .evaluator import AlgebraidEvaluator
@@ -22,12 +24,44 @@ from .adapters import get_adapter
 from .tasks.validator import TaskValidator, print_report
 
 
+# ── naming helpers ─────────────────────────────────────────────────────────
+
 def _default_task_path(seed: int) -> str:
-    """Return a sensible default output path that encodes the seed."""
+    """Default task-set path: ``./data/algebraid_s{seed}_{YYYYMMDD}.jsonl``."""
     return f"./data/algebraid_s{seed}_{date.today():%Y%m%d}.jsonl"
 
 
-# ── generate ────────────────────────────────────────────────────────────────
+def _sanitize(name: str) -> str:
+    """Turn an arbitrary string into a filesystem-safe slug."""
+    return re.sub(r"[^a-zA-Z0-9]+", "_", name).strip("_").lower()
+
+
+def _stem(path: str) -> str:
+    """Extract the filename stem (no directory, no extension)."""
+    return Path(path).stem
+
+
+def _default_predictions_path(task_set_path: str, model: str) -> str:
+    """Default predictions path encoding the task set and model.
+
+    Example: ``./results/preds_gpt_4_1_nano_algebraid_s42_20260225.json``
+    """
+    ts = _sanitize(_stem(task_set_path))
+    m = _sanitize(model)
+    return f"./results/preds_{m}_{ts}.json"
+
+
+def _default_report_path(task_set_path: str, model_name: str) -> str:
+    """Default evaluation report path encoding the task set and model.
+
+    Example: ``./results/report_gpt_4_1_nano_algebraid_s42_20260225.json``
+    """
+    ts = _sanitize(_stem(task_set_path))
+    m = _sanitize(model_name)
+    return f"./results/report_{m}_{ts}.json"
+
+
+# ── generate ───────────────────────────────────────────────────────────────
 
 def _generate(args: argparse.Namespace) -> None:
     output = args.output or _default_task_path(args.seed)
@@ -55,7 +89,7 @@ def _generate(args: argparse.Namespace) -> None:
             print(f"WARNING: {report['failed']} task(s) failed validation.")
 
 
-# ── run ─────────────────────────────────────────────────────────────────────
+# ── run ────────────────────────────────────────────────────────────────────
 
 def _run(args: argparse.Namespace) -> None:
     if not os.path.exists(args.task_set):
@@ -63,6 +97,7 @@ def _run(args: argparse.Namespace) -> None:
         return
 
     task_set = TaskSet.from_jsonl(args.task_set)
+    output = args.output or _default_predictions_path(args.task_set, args.model)
     print(f"Running {len(task_set)} tasks on {args.model} ...")
 
     Adapter = get_adapter(args.adapter)
@@ -78,15 +113,15 @@ def _run(args: argparse.Namespace) -> None:
     predictions = adapter.run_tasks(task_set)
     print(f"Completed in {time.time() - t0:.1f}s")
 
-    out_dir = os.path.dirname(args.output)
+    out_dir = os.path.dirname(output)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
-    with open(args.output, "w") as f:
+    with open(output, "w") as f:
         json.dump(predictions, f, indent=2)
-    print(f"Predictions saved to {args.output}")
+    print(f"Predictions saved to {output}")
 
 
-# ── evaluate ────────────────────────────────────────────────────────────────
+# ── evaluate ───────────────────────────────────────────────────────────────
 
 def _evaluate(args: argparse.Namespace) -> None:
     for path, label in [(args.task_set, "Task set"), (args.predictions, "Predictions")]:
@@ -101,17 +136,16 @@ def _evaluate(args: argparse.Namespace) -> None:
     evaluator = AlgebraidEvaluator(strict=args.strict)
     report = evaluator.evaluate(task_set, predictions, model_name=args.model_name)
 
-    if args.output:
-        out_dir = os.path.dirname(args.output)
-        if out_dir:
-            os.makedirs(out_dir, exist_ok=True)
-        report.save(args.output)
-        print(f"Report saved to {args.output}")
-
+    output = args.output or _default_report_path(args.task_set, args.model_name)
+    out_dir = os.path.dirname(output)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    report.save(output)
+    print(f"Report saved to {output}")
     report.print_summary()
 
 
-# ── validate ────────────────────────────────────────────────────────────────
+# ── validate ───────────────────────────────────────────────────────────────
 
 def _validate(args: argparse.Namespace) -> None:
     if not os.path.exists(args.task_set):
@@ -131,7 +165,7 @@ def _validate(args: argparse.Namespace) -> None:
         print(f"Report saved to {args.output}")
 
 
-# ── entry point ─────────────────────────────────────────────────────────────
+# ── entry point ────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -143,7 +177,7 @@ def main() -> None:
     # generate
     p = sub.add_parser("generate", help="Generate a new task set.")
     p.add_argument("-o", "--output", default=None,
-                   help="Output JSONL path. Default: ./data/algebraid_s{seed}_{date}.jsonl")
+                   help="Output JSONL path (default: ./data/algebraid_s{seed}_{date}.jsonl).")
     p.add_argument("--seed", type=int, default=42, help="Random seed (default: 42).")
     p.add_argument("--depths", type=int, nargs="+", default=[1, 2, 3, 4],
                    help="Composition depths (default: 1 2 3 4).")
@@ -160,8 +194,8 @@ def main() -> None:
     # run
     p = sub.add_parser("run", help="Run tasks against a model.")
     p.add_argument("task_set", help="Path to the task set JSONL.")
-    p.add_argument("-o", "--output", default="./results/predictions.json",
-                   help="Output predictions JSON (default: ./results/predictions.json).")
+    p.add_argument("-o", "--output", default=None,
+                   help="Output predictions JSON (default: ./results/preds_{model}_{taskset}.json).")
     p.add_argument("-a", "--adapter", default="openai",
                    help="Adapter: openai | anthropic | huggingface | custom_http.")
     p.add_argument("-m", "--model", default="gpt-4.1-nano",
@@ -180,8 +214,8 @@ def main() -> None:
     p = sub.add_parser("evaluate", help="Score predictions against a task set.")
     p.add_argument("task_set", help="Path to the task set JSONL.")
     p.add_argument("predictions", help="Path to the predictions JSON.")
-    p.add_argument("-o", "--output", default="./results/report.json",
-                   help="Output report JSON (default: ./results/report.json).")
+    p.add_argument("-o", "--output", default=None,
+                   help="Output report JSON (default: ./results/report_{model}_{taskset}.json).")
     p.add_argument("--model-name", default="unknown",
                    help="Model display name for the report.")
     p.add_argument("--strict", action="store_true",

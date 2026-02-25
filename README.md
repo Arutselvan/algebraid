@@ -25,16 +25,23 @@ pip install -e .
 ```bash
 # Generate a task set (auto-validated)
 algebraid generate --seed 42
+# -> ./data/algebraid_s42_20260225.jsonl
 
 # Validate an existing task set
 algebraid validate ./data/algebraid_s42_20260225.jsonl
 
 # Run tasks against a model (requires OPENAI_API_KEY)
 algebraid run ./data/algebraid_s42_20260225.jsonl -m gpt-4.1-nano
+# -> ./results/preds_gpt_4_1_nano_algebraid_s42_20260225.json
 
 # Evaluate predictions
-algebraid evaluate ./data/algebraid_s42_20260225.jsonl ./results/predictions.json
+algebraid evaluate ./data/algebraid_s42_20260225.jsonl \
+    ./results/preds_gpt_4_1_nano_algebraid_s42_20260225.json \
+    --model-name gpt-4.1-nano
+# -> ./results/report_gpt_4_1_nano_algebraid_s42_20260225.json
 ```
+
+Every output file name encodes the seed, date, model, and task set it belongs to, so artifacts are always traceable.
 
 ## CLI Reference
 
@@ -42,7 +49,7 @@ algebraid evaluate ./data/algebraid_s42_20260225.jsonl ./results/predictions.jso
 
 | Argument | Default | Description |
 |---|---|---|
-| `-o`, `--output` | `./data/algebraid_s{seed}_{date}.jsonl` | Output JSONL path. |
+| `-o`, `--output` | `./data/algebraid_s{seed}_{YYYYMMDD}.jsonl` | Output JSONL path. |
 | `--seed` | `42` | Random seed. |
 | `--depths` | `1 2 3 4` | Composition depths. |
 | `--tasks-per-depth` | `50` | Tasks per depth/family combination. |
@@ -55,7 +62,7 @@ algebraid evaluate ./data/algebraid_s42_20260225.jsonl ./results/predictions.jso
 | Argument | Default | Description |
 |---|---|---|
 | `task_set` | | Path to the task set JSONL. |
-| `-o`, `--output` | `./results/predictions.json` | Output predictions JSON. |
+| `-o`, `--output` | `./results/preds_{model}_{taskset}.json` | Output predictions JSON. |
 | `-a`, `--adapter` | `openai` | Adapter: `openai`, `anthropic`, `huggingface`, `custom_http`. |
 | `-m`, `--model` | `gpt-4.1-nano` | Model identifier. |
 | `-t`, `--temperature` | `0.0` | Sampling temperature. |
@@ -68,7 +75,7 @@ algebraid evaluate ./data/algebraid_s42_20260225.jsonl ./results/predictions.jso
 |---|---|---|
 | `task_set` | | Path to the task set JSONL. |
 | `predictions` | | Path to the predictions JSON. |
-| `-o`, `--output` | `./results/report.json` | Output report JSON. |
+| `-o`, `--output` | `./results/report_{model}_{taskset}.json` | Output report JSON. |
 | `--model-name` | `unknown` | Model display name for the report. |
 | `--strict` | | Enable strict answer matching. |
 
@@ -78,6 +85,18 @@ algebraid evaluate ./data/algebraid_s42_20260225.jsonl ./results/predictions.jso
 |---|---|---|
 | `task_set` | | Path to the task set JSONL. |
 | `-o`, `--output` | | Output validation report JSON. |
+
+## Output Naming Convention
+
+All default output paths are constructed to be self-describing:
+
+| Artifact | Pattern | Example |
+|---|---|---|
+| Task set | `algebraid_s{seed}_{YYYYMMDD}.jsonl` | `algebraid_s42_20260225.jsonl` |
+| Predictions | `preds_{model}_{taskset}.json` | `preds_gpt_4_1_nano_algebraid_s42_20260225.json` |
+| Eval report | `report_{model}_{taskset}.json` | `report_gpt_4_1_nano_algebraid_s42_20260225.json` |
+
+Model names and task set stems are sanitized to filesystem-safe slugs (e.g. `gpt-4.1-nano` becomes `gpt_4_1_nano`).
 
 ## Python API
 
@@ -93,7 +112,7 @@ report = TaskValidator().validate_set(task_set)
 print(f"{report['passed']}/{report['total']} tasks passed validation")
 
 # Save
-task_set.to_jsonl("./data/algebraid_s42.jsonl")
+task_set.to_jsonl("./data/algebraid_s42_20260225.jsonl")
 ```
 
 ## Semantic Skins
