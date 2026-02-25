@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "algebraid"
+version = "2.0.0"
+authors = [
+    { name = "Arut Selvan Dhanasekaran" },
+]
+description = "ALGEBRAID: A Procedurally Generated Benchmark for Compositional Generalization Using Formal Algebraic Structures."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "openai",
+    "matplotlib",
+    "numpy",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/Arutselvan/algebraid"
+"Bug Tracker" = "https://github.com/Arutselvan/algebraid/issues"
+
+[project.scripts]
+algebraid = "algebraid.cli:main"
