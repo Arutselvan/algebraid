@@ -1,10 +1,10 @@
 """
-Quaternion Group Q_8 — the 8-element non-abelian group of unit quaternions.
+Quaternion Group Q_8 - the 8-element non-abelian group of unit quaternions.
 
 Elements: {1, -1, i, -i, j, -j, k, -k}
-Multiplication rules: i²=j²=k²=-1, ij=k, ji=-k, jk=i, kj=-i, ki=j, ik=-j
+Multiplication rules: i^2=j^2=k^2=-1, ij=k, ji=-k, jk=i, kj=-i, ki=j, ik=-j
 
-Internal representation: integer indices 0–7
+Internal representation: integer indices 0-7
     0: "1",  1: "-1",  2: "i",  3: "-i",  4: "j",  5: "-j",  6: "k",  7: "-k"
 """
 
@@ -16,7 +16,7 @@ from .base import AlgebraicStructure
 _NAMES = ["1", "-1", "i", "-i", "j", "-j", "k", "-k"]
 
 # Precomputed multiplication table: MUL_TABLE[a][b] = a * b (as index)
-# Derived from quaternion algebra: i²=j²=k²=ijk=-1
+# Derived from quaternion algebra: i^2=j^2=k^2=ijk=-1
 _MUL_TABLE = [
     # a=0  (+1, identity): 1*b = b
     [0, 1, 2, 3, 4, 5, 6, 7],
@@ -42,7 +42,7 @@ _INV_TABLE = [0, 1, 3, 2, 5, 4, 7, 6]
 
 
 class QuaternionGroup(AlgebraicStructure):
-    """The quaternion group Q_8 = {±1, ±i, ±j, ±k} under quaternion multiplication.
+    """The quaternion group Q_8 = {+/-1, +/-i, +/-j, +/-k} under quaternion multiplication.
 
     This is the unique non-abelian group of order 8 with a single element of
     order 2 (namely -1). It is non-abelian: e.g. i*j = k but j*i = -k.
@@ -57,12 +57,12 @@ class QuaternionGroup(AlgebraicStructure):
     def description(self) -> str:
         return (
             "The quaternion group of order 8, with elements {1, -1, i, -i, j, -j, k, -k} "
-            "under quaternion multiplication (i²=j²=k²=-1, ij=k, ji=-k)."
+            "under quaternion multiplication (i^2=j^2=k^2=-1, ij=k, ji=-k)."
         )
 
     @property
     def short_description(self) -> str:
-        return "(the quaternion group: ±1, ±i, ±j, ±k)"
+        return "(the quaternion group: +/-1, +/-i, +/-j, +/-k)"
 
     def elements(self) -> List[int]:
         return list(range(8))

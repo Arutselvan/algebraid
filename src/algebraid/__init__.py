@@ -1,5 +1,5 @@
 """
-ALGEBRAID — A procedurally generated benchmark for compositional
+ALGEBRAID - A procedurally generated benchmark for compositional
 generalization using formal algebraic structures.
 """
 

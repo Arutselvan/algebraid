@@ -29,10 +29,10 @@ from algebraid.primitives import CyclicGroup, QuaternionGroup
 class TestDeterminism:
     def test_same_seed_same_tasks(self):
         ts1 = AlgebraidGenerator(seed=42).generate(
-            depths=[1, 2], tasks_per_depth=5, include_dimensions=False
+            depths=[1, 2], tasks_per_depth=5
         )
         ts2 = AlgebraidGenerator(seed=42).generate(
-            depths=[1, 2], tasks_per_depth=5, include_dimensions=False
+            depths=[1, 2], tasks_per_depth=5
         )
         for t1, t2 in zip(ts1, ts2):
             assert t1.task_id == t2.task_id
@@ -54,52 +54,47 @@ class TestFamilyGeneration:
         return {t.family.value for t in ts}
 
     def test_intra_family_present(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=5, families=["intra"], include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=5, families=["intra"])
         assert "intra-structure composition" in self._families_in(ts)
 
     def test_inter_family_present(self, gen):
-        ts = gen.generate(depths=[2], tasks_per_depth=5, families=["inter"], include_dimensions=False)
+        ts = gen.generate(depths=[2], tasks_per_depth=5, families=["inter"])
         assert "inter-structure composition" in self._families_in(ts)
 
     def test_field_family_present(self, gen):
-        ts = gen.generate(depths=[2], tasks_per_depth=5, families=["field"], include_dimensions=False)
+        ts = gen.generate(depths=[2], tasks_per_depth=5, families=["field"])
         assert "field arithmetic" in self._families_in(ts)
 
     def test_rule_family_present(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=5, families=["rule"], include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=5, families=["rule"])
         assert "rule induction" in self._families_in(ts)
 
     def test_conceptual_family_present(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=5, families=["conceptual"], include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=5, families=["conceptual"])
         assert "conceptual query" in self._families_in(ts)
 
     def test_adversarial_family_present(self, gen):
-        ts = gen.generate(depths=[2], tasks_per_depth=5, families=["adversarial"], include_dimensions=False)
+        ts = gen.generate(depths=[2], tasks_per_depth=5, families=["adversarial"])
         assert "intra-structure composition" in self._families_in(ts)
         dims = {t.dimension.value for t in ts}
         assert "adversarial" in dims
 
     def test_intermediate_family_present(self, gen):
-        ts = gen.generate(depths=[3], tasks_per_depth=5, families=["intermediate"], include_dimensions=False)
+        ts = gen.generate(depths=[3], tasks_per_depth=5, families=["intermediate"])
         dims = {t.dimension.value for t in ts}
         assert "intermediate_state" in dims
 
     def test_unknown_family_ignored(self, gen):
         # Should not raise; just skip unknown family
-        ts = gen.generate(depths=[1], tasks_per_depth=3, families=["intra", "unknown"], include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=3, families=["intra", "unknown"])
         assert len(ts) > 0
-
-    def test_include_dimensions_adds_extra_tasks(self, gen):
-        ts_no = gen.generate(depths=[2, 3], tasks_per_depth=3, families=["intra"], include_dimensions=False)
-        ts_yes = AlgebraidGenerator(seed=42).generate(depths=[2, 3], tasks_per_depth=3, families=["intra"], include_dimensions=True)
-        assert len(ts_yes) > len(ts_no)
 
 
 # ── Task schema validation ─────────────────────────────────────────────────────
 
 class TestTaskSchema:
     def test_all_tasks_have_required_fields(self, gen):
-        ts = gen.generate(depths=[1, 2], tasks_per_depth=5, include_dimensions=False)
+        ts = gen.generate(depths=[1, 2], tasks_per_depth=5)
         for t in ts:
             assert isinstance(t.task_id, str) and t.task_id.startswith("AG-")
             assert isinstance(t.prompt, str) and len(t.prompt) > 10
@@ -111,7 +106,7 @@ class TestTaskSchema:
             assert isinstance(t.structures, list) and len(t.structures) > 0
 
     def test_task_ids_are_unique(self, gen):
-        ts = gen.generate(depths=[1, 2, 3], tasks_per_depth=10, include_dimensions=True)
+        ts = gen.generate(depths=[1, 2, 3], tasks_per_depth=10)
         ids = [t.task_id for t in ts]
         assert len(ids) == len(set(ids)), "Duplicate task IDs found"
 
@@ -135,14 +130,14 @@ class TestConceptualTaskCorrectness:
                 assert isinstance(t.answer, str)
 
     def test_structure_order_matches_structure(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=20, families=["conceptual"], include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=20, families=["conceptual"])
         for t in ts:
             if t.metadata.get("query_subtype") == "structure_order":
                 expected = str(t.metadata["structure_order"])
                 assert t.answer_raw == expected
 
     def test_is_abelian_matches_metadata(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=30, families=["conceptual"], include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=30, families=["conceptual"])
         for t in ts:
             if t.metadata.get("query_subtype") == "is_abelian":
                 is_abelian = t.metadata.get("structure_is_abelian")
@@ -150,7 +145,7 @@ class TestConceptualTaskCorrectness:
                 assert t.answer_raw == expected
 
     def test_commutativity_check_yes_only_if_abelian(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=30, families=["conceptual"], include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=30, families=["conceptual"])
         for t in ts:
             if t.metadata.get("query_subtype") == "commutativity_check":
                 # If structure is abelian, all pairs commute → answer is always "yes"
@@ -158,7 +153,7 @@ class TestConceptualTaskCorrectness:
                     assert t.answer_raw == "yes"
 
     def test_metadata_has_subtype(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=10, families=["conceptual"], include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=10, families=["conceptual"])
         for t in ts:
             assert "query_subtype" in t.metadata
             assert t.metadata["query_subtype"] in [
@@ -167,12 +162,12 @@ class TestConceptualTaskCorrectness:
             ]
 
     def test_solution_trace_is_none(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=5, families=["conceptual"], include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=5, families=["conceptual"])
         for t in ts:
             assert t.solution_trace is None
 
     def test_depth_is_1(self, gen):
-        ts = gen.generate(depths=[1, 2, 3], tasks_per_depth=5, families=["conceptual"], include_dimensions=False)
+        ts = gen.generate(depths=[1, 2, 3], tasks_per_depth=5, families=["conceptual"])
         for t in ts:
             assert t.depth == 1
 
@@ -181,7 +176,7 @@ class TestConceptualTaskCorrectness:
 
 class TestAdversarialTaskCorrectness:
     def test_double_inverse_answer_equals_start(self, gen):
-        ts = gen.generate(depths=[2, 3], tasks_per_depth=10, families=["adversarial"], include_dimensions=False)
+        ts = gen.generate(depths=[2, 3], tasks_per_depth=10, families=["adversarial"])
         for t in ts:
             if t.metadata.get("adversarial_type") == "double_inverse":
                 # answer should equal starting element (first trace entry after "start")
@@ -190,7 +185,7 @@ class TestAdversarialTaskCorrectness:
                 assert t.answer_raw == start_val
 
     def test_self_cancelling_answer_equals_start(self, gen):
-        ts = gen.generate(depths=[2, 3], tasks_per_depth=10, families=["adversarial"], include_dimensions=False)
+        ts = gen.generate(depths=[2, 3], tasks_per_depth=10, families=["adversarial"])
         for t in ts:
             if t.metadata.get("adversarial_type") == "self_cancelling":
                 assert t.solution_trace is not None
@@ -198,7 +193,7 @@ class TestAdversarialTaskCorrectness:
                 assert t.answer_raw == start_val
 
     def test_answer_ne_wrong_answer_for_trap_types(self, gen):
-        ts = gen.generate(depths=[2, 3], tasks_per_depth=15, families=["adversarial"], include_dimensions=False)
+        ts = gen.generate(depths=[2, 3], tasks_per_depth=15, families=["adversarial"])
         for t in ts:
             adv_type = t.metadata.get("adversarial_type")
             if adv_type in ("commutativity_trap", "identity_bait"):
@@ -207,19 +202,19 @@ class TestAdversarialTaskCorrectness:
                 )
 
     def test_metadata_has_wrong_answer(self, gen):
-        ts = gen.generate(depths=[2], tasks_per_depth=10, families=["adversarial"], include_dimensions=False)
+        ts = gen.generate(depths=[2], tasks_per_depth=10, families=["adversarial"])
         for t in ts:
             assert "wrong_answer" in t.metadata
             assert "adversarial_type" in t.metadata
             assert "wrong_answer_rationale" in t.metadata
 
     def test_dimension_is_adversarial(self, gen):
-        ts = gen.generate(depths=[2], tasks_per_depth=5, families=["adversarial"], include_dimensions=False)
+        ts = gen.generate(depths=[2], tasks_per_depth=5, families=["adversarial"])
         for t in ts:
             assert t.dimension == CompositionDimension.ADVERSARIAL
 
     def test_solution_trace_present(self, gen):
-        ts = gen.generate(depths=[2], tasks_per_depth=5, families=["adversarial"], include_dimensions=False)
+        ts = gen.generate(depths=[2], tasks_per_depth=5, families=["adversarial"])
         for t in ts:
             assert t.solution_trace is not None
             assert len(t.solution_trace) >= 2
@@ -230,7 +225,7 @@ class TestAdversarialTaskCorrectness:
 
 class TestIntermediateStateTaskCorrectness:
     def test_answer_matches_trace_at_query_step(self, gen):
-        ts = gen.generate(depths=[3, 4], tasks_per_depth=10, families=["intermediate"], include_dimensions=False)
+        ts = gen.generate(depths=[3, 4], tasks_per_depth=10, families=["intermediate"])
         for t in ts:
             k = t.metadata.get("query_step")
             assert k is not None
@@ -240,30 +235,30 @@ class TestIntermediateStateTaskCorrectness:
             assert t.answer_raw == trace[k][1]
 
     def test_depth_equals_query_step(self, gen):
-        ts = gen.generate(depths=[3, 4], tasks_per_depth=10, families=["intermediate"], include_dimensions=False)
+        ts = gen.generate(depths=[3, 4], tasks_per_depth=10, families=["intermediate"])
         for t in ts:
             assert t.depth == t.metadata["query_step"]
 
     def test_total_steps_greater_than_query_step(self, gen):
-        ts = gen.generate(depths=[3, 4], tasks_per_depth=10, families=["intermediate"], include_dimensions=False)
+        ts = gen.generate(depths=[3, 4], tasks_per_depth=10, families=["intermediate"])
         for t in ts:
             assert t.metadata["total_steps"] > t.metadata["query_step"]
 
     def test_trace_truncated_to_query_step(self, gen):
-        ts = gen.generate(depths=[3, 4], tasks_per_depth=10, families=["intermediate"], include_dimensions=False)
+        ts = gen.generate(depths=[3, 4], tasks_per_depth=10, families=["intermediate"])
         for t in ts:
             k = t.metadata["query_step"]
             # trace has k+1 entries: start + k operations
             assert len(t.solution_trace) == k + 1
 
     def test_final_answer_in_metadata(self, gen):
-        ts = gen.generate(depths=[3], tasks_per_depth=5, families=["intermediate"], include_dimensions=False)
+        ts = gen.generate(depths=[3], tasks_per_depth=5, families=["intermediate"])
         for t in ts:
             assert "final_answer" in t.metadata
             assert isinstance(t.metadata["final_answer"], str)
 
     def test_dimension_is_intermediate_state(self, gen):
-        ts = gen.generate(depths=[3], tasks_per_depth=5, families=["intermediate"], include_dimensions=False)
+        ts = gen.generate(depths=[3], tasks_per_depth=5, families=["intermediate"])
         for t in ts:
             assert t.dimension == CompositionDimension.INTERMEDIATE_STATE
 
@@ -303,13 +298,13 @@ class TestQ8InGeneration:
     def test_q8_appears_in_structures(self):
         # With enough tasks, Q_8 should appear (20% probability)
         gen = AlgebraidGenerator(seed=7)
-        ts = gen.generate(depths=[1, 2], tasks_per_depth=20, families=["intra"], include_dimensions=False)
+        ts = gen.generate(depths=[1, 2], tasks_per_depth=20, families=["intra"])
         all_structures = [s for t in ts for s in t.structures]
         assert "Q_8" in all_structures, "Q_8 should appear among structures for large task sets"
 
     def test_q8_tasks_have_valid_answers(self):
         gen = AlgebraidGenerator(seed=7)
-        ts = gen.generate(depths=[1, 2], tasks_per_depth=20, families=["intra"], include_dimensions=False)
+        ts = gen.generate(depths=[1, 2], tasks_per_depth=20, families=["intra"])
         q8_tasks = [t for t in ts if "Q_8" in t.structures]
         q8_names = {"1", "-1", "i", "-i", "j", "-j", "k", "-k"}
         for t in q8_tasks:

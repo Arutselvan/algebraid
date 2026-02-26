@@ -6,12 +6,12 @@ generated set is well-formed, self-consistent, and solvable from its
 prompt alone.  Validation is organized into four independent check
 categories:
 
-    1. Schema — required fields, types, and value ranges.
-    2. Prompt — completeness, readability, and absence of template
+    1. Schema - required fields, types, and value ranges.
+    2. Prompt - completeness, readability, and absence of template
        artifacts.
-    3. Answer — consistency between the answer, raw answer, and
+    3. Answer - consistency between the answer, raw answer, and
        solution trace.
-    4. Trace — structural soundness of the solution trace when present.
+    4. Trace - structural soundness of the solution trace when present.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from typing import Any, Dict, List
 from ..task_model import Task, TaskSet, CompositionDimension
 
 
-# ── Result container ────────────────────────────────────────────────────────
+# -- Result container --------------------------------------------------------
 
 class ValidationResult:
     """Outcome of validating a single task."""
@@ -51,7 +51,7 @@ class ValidationResult:
         )
 
 
-# ── Core validator ──────────────────────────────────────────────────────────
+# -- Core validator ----------------------------------------------------------
 
 class TaskValidator:
     """Run validation checks on individual tasks or entire task sets."""
@@ -92,7 +92,7 @@ class TaskValidator:
             "warnings": all_warnings,
         }
 
-    # ── 1. Schema checks ───────────────────────────────────────────────────
+    # -- 1. Schema checks ---------------------------------------------------
 
     def _check_schema(self, task: Task, r: ValidationResult) -> None:
         if not task.task_id:
@@ -106,7 +106,7 @@ class TaskValidator:
         if task.depth < 0:
             r.error(f"Invalid depth: {task.depth}.")
 
-    # ── 2. Prompt checks ───────────────────────────────────────────────────
+    # -- 2. Prompt checks ---------------------------------------------------
 
     # Phrases that indicate an operation handler fell through to a generic
     # default instead of producing a specific, solvable instruction.
@@ -140,7 +140,7 @@ class TaskValidator:
         if ".." in prompt and "..." not in prompt:
             r.warn("Double period detected in prompt text.")
 
-    # ── 3. Answer checks ───────────────────────────────────────────────────
+    # -- 3. Answer checks ---------------------------------------------------
 
     def _check_answer(self, task: Task, r: ValidationResult) -> None:
         if not task.solution_trace:
@@ -152,7 +152,7 @@ class TaskValidator:
                 f"answer_raw '{task.answer_raw}'."
             )
 
-    # ── 4. Trace checks ────────────────────────────────────────────────────
+    # -- 4. Trace checks ----------------------------------------------------
 
     def _check_trace(self, task: Task, r: ValidationResult) -> None:
         trace = task.solution_trace
@@ -161,7 +161,7 @@ class TaskValidator:
         expected_length = task.depth + 1
         if len(trace) != expected_length:
             # Intermediate-state tasks store only the prefix of the chain up to
-            # the queried step, so a shorter trace is by design — not a defect.
+            # the queried step, so a shorter trace is by design - not a defect.
             if task.dimension == CompositionDimension.INTERMEDIATE_STATE:
                 return
             r.warn(
@@ -170,7 +170,7 @@ class TaskValidator:
             )
 
 
-# ── Convenience helpers ─────────────────────────────────────────────────────
+# -- Convenience helpers -----------------------------------------------------
 
 def validate_file(path: str) -> Dict[str, Any]:
     """Load a JSONL task file and return a validation report."""

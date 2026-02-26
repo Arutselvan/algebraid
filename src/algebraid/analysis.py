@@ -4,7 +4,7 @@ Error analysis suite for ALGEBRAID evaluation results.
 Addresses paper Blocker 2 (New Insight) by providing analyses beyond
 simple accuracy-vs-depth tables:
 
-  fit_scaling_law()      Power-law decay fit:  acc(d) ≈ A · depth^(−α)
+  fit_scaling_law()      Power-law decay fit:  acc(d) ~= A * depth^(-alpha)
   find_phase_transition() Steepest accuracy drop and first sub-50% depth
   error_taxonomy()       Mechanistic failure-mode classification
   hallucination_onset()  Depth at which refusal/nonsense rate rises
@@ -12,8 +12,7 @@ simple accuracy-vs-depth tables:
   run_analysis()         Consolidated report dict (all of the above)
   print_analysis()       Human-readable console output
 
-All functions accept an EvalReport from evaluator.py (or a list of them
-for compare_models()).
+All functions accept an EvalReport from evaluator.py.
 """
 
 from __future__ import annotations
@@ -27,22 +26,22 @@ from .evaluator import EvalReport, EvalResult
 from .task_model import CompositionDimension
 
 
-# ── 1. Error Scaling Law ─────────────────────────────────────────────────────
+# -- 1. Error Scaling Law -----------------------------------------------------
 
 def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
     """
     Fit a power-law decay to accuracy as a function of composition depth.
 
-        acc(d) ≈ A · d^(−α)
+        acc(d) ~= A * d^(-alpha)
 
     Fit via ordinary least-squares in log-log space:
 
-        log(acc) = log(A) − α · log(d)
+        log(acc) = log(A) - alpha * log(d)
 
     Returns
     -------
     A            Pre-factor  (model accuracy extrapolated to depth 1)
-    alpha        Decay exponent  (α > 0 → accuracy falls with depth)
+    alpha        Decay exponent  (alpha > 0 -> accuracy falls with depth)
     r2           Coefficient of determination
     interpretation  Human-readable sentence
     data         Per-depth {depth, accuracy, fitted} list for plotting
@@ -73,7 +72,7 @@ def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
             "note": "Zero variance in depths; cannot fit.",
         }
 
-    alpha = -ss_xy / ss_xx           # slope in log-log space is −α
+    alpha = -ss_xy / ss_xx           # slope in log-log space is -alpha
     log_A = mean_la - (-alpha) * mean_ld
     A = math.exp(log_A)
 
@@ -81,7 +80,7 @@ def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
     ss_tot = sum((la - mean_la) ** 2 for la in log_a)
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
-    # Percentage accuracy drop when depth doubles: 1 − 2^(−α)
+    # Percentage accuracy drop when depth doubles: 1 - 2^(-alpha)
     halving_drop = (1 - 2 ** (-alpha)) * 100
 
     data = [
@@ -105,15 +104,15 @@ def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
     }
 
 
-# ── 2. Phase Transition ──────────────────────────────────────────────────────
+# -- 2. Phase Transition ------------------------------------------------------
 
 def find_phase_transition(report: EvalReport) -> Dict[str, Any]:
     """
     Identify the composition depth at which accuracy collapses most sharply.
 
     Two complementary signals:
-      steepest_drop_at_depth — depth d where |acc[d] − acc[d+1]| is largest
-      first_sub50_depth      — first depth where accuracy < 50 %
+      steepest_drop_at_depth - depth d where |acc[d] - acc[d+1]| is largest
+      first_sub50_depth      - first depth where accuracy < 50 %
 
     critical_depth = minimum of the two (earliest warning).
     """
@@ -154,7 +153,7 @@ def find_phase_transition(report: EvalReport) -> Dict[str, Any]:
     }
 
 
-# ── 3. Mechanistic Error Taxonomy ────────────────────────────────────────────
+# -- 3. Mechanistic Error Taxonomy --------------------------------------------
 
 _HALLUCINATION_RE = re.compile(
     r"cannot|undefined|infinity|idk|unknown|impossible|not defined|n/a|none|sorry|don.t know",
@@ -249,7 +248,7 @@ def error_taxonomy(report: EvalReport) -> Dict[str, Any]:
     }
 
 
-# ── 4. Hallucination Onset ───────────────────────────────────────────────────
+# -- 4. Hallucination Onset ---------------------------------------------------
 
 def hallucination_onset(report: EvalReport, threshold: float = 0.15) -> Dict[str, Any]:
     """
@@ -294,7 +293,7 @@ def hallucination_onset(report: EvalReport, threshold: float = 0.15) -> Dict[str
     }
 
 
-# ── 5. Stability Breakdown Curve ─────────────────────────────────────────────
+# -- 5. Stability Breakdown Curve ---------------------------------------------
 
 def stability_breakdown(report: EvalReport) -> List[Dict[str, Any]]:
     """
@@ -322,7 +321,7 @@ def stability_breakdown(report: EvalReport) -> List[Dict[str, Any]]:
     ]
 
 
-# ── 6. Consolidated report ───────────────────────────────────────────────────
+# -- 6. Consolidated report ---------------------------------------------------
 
 def run_analysis(report: EvalReport) -> Dict[str, Any]:
     """Run all five analyses and return a single consolidated dict."""

@@ -1,8 +1,8 @@
 """
 Multi-dimensional evaluation suite.
 
-Scores model predictions along composition depth, task family, Hupkes
-compositionality dimension, and four algebraic complexity metrics.
+Scores model predictions along composition depth, task family, compositional
+dimension, and four algebraic complexity metrics.
 """
 
 from typing import Dict, List, Any, Optional

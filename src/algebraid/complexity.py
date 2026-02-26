@@ -2,10 +2,10 @@
 Algebraic complexity metrics.
 
 Four structure-aware difficulty measures:
-    H_alg  — Algebraic Entropy (information-theoretic search space)
-    D_comm — Commutativity Distance (order-dependence of operations)
-    O_c    — Orbit Complexity (fraction of group visited by the trace)
-    I_s    — Structural Interference (shared divisors in direct products)
+    H_alg  - Algebraic Entropy (information-theoretic search space)
+    D_comm - Commutativity Distance (order-dependence of operations)
+    O_c    - Orbit Complexity (fraction of group visited by the trace)
+    I_s    - Structural Interference (shared divisors in direct products)
 """
 
 import math
@@ -170,7 +170,7 @@ def compute_complexity(task: Task) -> AlgebraicComplexity:
     )
 
 
-# ── Extended metrics for new task dimensions ─────────────────────────────────
+# -- Extended metrics for new task dimensions ---------------------------------
 # These are standalone functions that return 0.0 for non-applicable tasks,
 # preserving full backward compatibility with AlgebraicComplexity.
 

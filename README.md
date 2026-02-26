@@ -6,7 +6,7 @@
 
 ---
 
-ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks built on five algebraic structures and seven task families. Every answer is formally guaranteed correct — either by algebraic construction or by an independent proof verifier that re-derives each answer from scratch. Because tasks are generated from a seed, any experiment can be reproduced exactly.
+ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks built on five algebraic structures and seven task families. Every answer is formally guaranteed correct - either by algebraic construction or by an independent proof verifier that re-derives each answer from scratch. Because tasks are generated from a seed, any experiment can be reproduced exactly.
 
 ## Key Properties
 
@@ -15,8 +15,8 @@ ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks buil
 | **Guaranteed correct answers** | All answers are derived by computation, not labelling |
 | **Formal verification** | Independent re-derivation checks every solution trace |
 | **No memorisation** | Unlimited procedural variation; no fixed test set |
-| **Reproducible** | Seed-based generation; identical seed → identical task set |
-| **Multi-dimensional** | 7 task families × 7 Hupkes dimensions × 4 complexity metrics |
+| **Reproducible** | Seed-based generation; identical seed -> identical task set |
+| **Multi-dimensional** | 7 task families x 7 compositional dimensions x 4 complexity metrics |
 
 ## Install
 
@@ -47,7 +47,7 @@ algebraid pipeline ./data/algebraid_s42_20260225_e50604.jsonl \
 # -> ./runs/20260225_143012_gpt_4_1_nano_algebraid_s42_.../
 ```
 
-The pipeline creates a self-contained, uniquely-named run folder — see [Pipeline Output](#pipeline-output).
+The pipeline creates a self-contained, uniquely-named run folder - see [Pipeline Output](#pipeline-output).
 
 ---
 
@@ -57,12 +57,12 @@ ALGEBRAID generates seven task families, controlled via `--families`:
 
 | Family key | Description | Example |
 |---|---|---|
-| `intra` | Composition chain within a single structure | Apply inverse, then multiply by 3, then square in Z₁₂ |
-| `inter` | Component-wise operation across a direct product | Compute (Z₇ × S₃) element-wise |
+| `intra` | Composition chain within a single structure | Apply inverse, then multiply by 3, then square in Z_12 |
+| `inter` | Component-wise operation across a direct product | Compute (Z_7 x S_3) element-wise |
 | `field` | Expression tree in a finite field GF(p) | Evaluate `(3 * x + 5) mod 7` |
-| `rule` | Identify the pattern and give the next element | Find the rule in a Z₅ sequence |
-| `conceptual` | Structural property query (no computation chain) | What is the order of element 4 in Z₁₂? |
-| `adversarial` | Reversible chain designed to trigger specific errors | Apply inverse twice — answer is the starting value |
+| `rule` | Identify the pattern and give the next element | Find the rule in a Z_5 sequence |
+| `conceptual` | Structural property query (no computation chain) | What is the order of element 4 in Z_12? |
+| `adversarial` | Reversible chain designed to trigger specific errors | Apply inverse twice - answer is the starting value |
 | `intermediate` | Report the value after step k of an n-step chain | What is the value after step 2 of a depth-4 chain? |
 
 All families are included by default. The conceptual, adversarial, and intermediate families expose distinct failure modes invisible to standard chain tasks.
@@ -71,7 +71,7 @@ All families are included by default. The conceptual, adversarial, and intermedi
 
 | Sub-type | Trap | Wrong answer |
 |---|---|---|
-| `double_inverse` | Two inverses cancel — answer = start | Applying only one inverse |
+| `double_inverse` | Two inverses cancel - answer = start | Applying only one inverse |
 | `self_cancelling` | Operations sum to zero mod n | Intermediate value after first op |
 | `identity_bait` | Result is the identity element | Starting value |
 | `commutativity_trap` | Non-abelian structure; order matters | Swapped operand result |
@@ -83,8 +83,8 @@ All families are included by default. The conceptual, adversarial, and intermedi
 | Structure | Notation | Non-abelian | Order |
 |---|---|---|---|
 | Cyclic group | Z_n | No | n |
-| Symmetric group | S_n (n = 3–5) | Yes (n ≥ 3) | n! |
-| Dihedral group | D_n (n = 3–8) | Yes (n > 2) | 2n |
+| Symmetric group | S_n (n = 3-5) | Yes (n >= 3) | n! |
+| Dihedral group | D_n (n = 3-8) | Yes (n > 2) | 2n |
 | Finite field | GF(p) | No | p |
 | Quaternion group | Q_8 | Yes | 8 |
 
@@ -128,12 +128,11 @@ algebraid generate --seed 42 --depths 1 2 3 4 --tasks-per-depth 50
 | `--depths` | `1 2 3 4` | Composition depths to generate |
 | `--tasks-per-depth` | `50` | Tasks per depth/family combination |
 | `--families` | all seven | Space-separated list of families to include |
-| `--no-dims` | | Exclude Hupkes compositionality dimension variants |
 | `--skip-validation` | | Skip post-generation schema validation |
 
 ### `algebraid pipeline`
 
-End-to-end evaluation in a single command. Runs the model, scores predictions, verifies algebraic correctness, and computes error analysis — all saved to a uniquely named folder.
+End-to-end evaluation in a single command. Runs the model, scores predictions, verifies algebraic correctness, and computes error analysis - all saved to a uniquely named folder.
 
 ```bash
 algebraid pipeline ./data/tasks.jsonl --model claude-sonnet-4-6 --adapter anthropic
@@ -178,7 +177,7 @@ algebraid validate ./data/tasks.jsonl
 
 ### `algebraid prove`
 
-Independently re-derive every answer from its solution trace using algebraic primitives — no reference to the generator's computation path.
+Independently re-derive every answer from its solution trace using algebraic primitives - no reference to the generator's computation path.
 
 ```bash
 algebraid prove ./data/tasks.jsonl
@@ -218,7 +217,7 @@ The `pipeline` command creates a uniquely identifiable folder per run:
     analysis.json       power-law fit, phase transition, error taxonomy, hallucination onset
 ```
 
-The folder name encodes the timestamp, model, and task set — making runs sortable and self-describing without opening any file.
+The folder name encodes the timestamp, model, and task set - making runs sortable and self-describing without opening any file.
 
 The `eval_report.json` includes per-task results (response, ground truth, correctness) capped at 512 characters per response. This enables `algebraid analyze` to produce a complete error taxonomy from a saved report without re-running the model.
 
@@ -292,31 +291,31 @@ Every task carries four algebraic complexity scores, computed independently of t
 
 | Metric | Symbol | Measures |
 |---|---|---|
-| Algebraic Entropy | H_alg | log₂(\|G\|) × depth — information needed to specify a result |
+| Algebraic Entropy | H_alg | log_2(\|G\|) x depth - information needed to specify a result |
 | Commutativity Distance | D_comm | Fraction of non-commuting element pairs in the chain |
-| Orbit Complexity | O_c | Distinct intermediate values / \|G\| — breadth of traversal |
+| Orbit Complexity | O_c | Distinct intermediate values / \|G\| - breadth of traversal |
 | Structural Interference | I_s | Coprimality-based interference for direct products |
 
 Two extended metrics apply to the new task families:
 
-- **`compute_conceptual_depth(task)`** — difficulty of a conceptual query (0.1 for identity lookup, 0.7 for element-order computation)
-- **`compute_adversarial_strength(task)`** — strength of the adversarial trap (0.3 for self-cancellation, 0.8 for commutativity trap)
+- **`compute_conceptual_depth(task)`** - difficulty of a conceptual query (0.1 for identity lookup, 0.7 for element-order computation)
+- **`compute_adversarial_strength(task)`** - strength of the adversarial trap (0.3 for self-cancellation, 0.8 for commutativity trap)
 
 ---
 
 ## Compositional Dimensions
 
-Following Hupkes et al. (2020), tasks are tagged with one of seven dimensions:
+Tasks are tagged with one of seven compositional dimensions. The first four are drawn directly from Hupkes et al. (2020); the remaining three are ALGEBRAID-specific extensions:
 
-| Dimension | Tests |
-|---|---|
-| `general` | Standard task (no specific dimension stress) |
-| `systematicity` | Unseen combination of seen components |
-| `substitutivity` | Synonym substitution invariance |
-| `productivity` | Longer chain than seen during training |
-| `overgeneralization` | Resistance to applying rules where they don't hold |
-| `adversarial` | Resistance to specific reasoning shortcuts |
-| `intermediate_state` | Access to intermediate computation steps |
+| Dimension | Source | Tests |
+|---|---|---|
+| `systematicity` | Hupkes et al. | Unseen combination of seen components |
+| `substitutivity` | Hupkes et al. | Synonym substitution invariance |
+| `productivity` | Hupkes et al. | Longer chain than seen during training |
+| `overgeneralization` | Hupkes et al. | Resistance to applying rules where they don't hold |
+| `adversarial` | ALGEBRAID | Resistance to specific reasoning shortcuts |
+| `intermediate_state` | ALGEBRAID | Access to intermediate computation steps |
+| `general` | ALGEBRAID | Standard task (no specific dimension stress) |
 
 ---
 

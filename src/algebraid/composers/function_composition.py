@@ -33,7 +33,7 @@ class AlgebraicOperation:
         return self.name
 
 
-# ── Standard operation factory ──────────────────────────────────────────────
+# -- Standard operation factory ----------------------------------------------
 
 def make_standard_operations(
     structure: AlgebraicStructure,
@@ -106,8 +106,8 @@ def make_standard_operations(
             func=lambda x, c: structure.op_chain(c, x, structure.inverse(c)),
             arity=1,
             description=r.choice([
-                f"conjugate by {s_c}: compute {s_c} * x * {s_c}\u207b\u00b9",
-                f"apply conjugation {s_c} * x * {s_c}\u207b\u00b9",
+                f"conjugate by {s_c}: compute {s_c} * x * {s_c}^(-1)",
+                f"apply conjugation {s_c} * x * {s_c}^(-1)",
             ]),
             symbol=f"{s_c} * _ * {s_c}^-1",
             fixed_args=(c_c,),
@@ -146,7 +146,7 @@ def make_standard_operations(
     return ops
 
 
-# ── Composed function ───────────────────────────────────────────────────────
+# -- Composed function -------------------------------------------------------
 
 class ComposedFunction:
     """A pipeline of ``AlgebraicOperation`` objects applied in sequence."""

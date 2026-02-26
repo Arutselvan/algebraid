@@ -40,7 +40,7 @@ def _extract_binary_answer(text: str) -> Optional[str]:
     if m:
         val = m.group(1)
         return "yes" if val in ("yes", "true") else "no"
-    # Standalone word at the very start (e.g. "Yes, because…")
+    # Standalone word at the very start (e.g. "Yes, because...")
     m = re.match(r'^(yes|no|true|false)\b', t)
     if m:
         val = m.group(1)

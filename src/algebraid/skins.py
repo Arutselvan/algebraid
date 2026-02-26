@@ -5,9 +5,9 @@ A *skin* wraps an abstract algebraic structure in a coherent real-world
 narrative so that the same mathematical task can be presented in many
 surface forms.  Each skin translates three things:
 
-    1. The structure itself  — e.g. Z_12 becomes "a 12-hour clock".
-    2. Individual elements   — e.g. 3 becomes "3 o'clock".
-    3. Operations            — e.g. right_mul_5 becomes "advance by 5 hours".
+    1. The structure itself  - e.g. Z_12 becomes "a 12-hour clock".
+    2. Individual elements   - e.g. 3 becomes "3 o'clock".
+    3. Operations            - e.g. right_mul_5 becomes "advance by 5 hours".
 
 Ten skins are provided, covering cyclic groups, symmetric groups,
 dihedral groups, and finite fields.
@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Tuple
 from .primitives.base import AlgebraicStructure
 
 
-# ── Abstract base ───────────────────────────────────────────────────────────
+# -- Abstract base -----------------------------------------------------------
 
 class SemanticSkin(ABC):
     """Base class for all semantic skins."""
@@ -42,14 +42,14 @@ class SemanticSkin(ABC):
         """Narrative description of an operation step."""
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Cyclic-group skins  (Z_n — additive)
+# ===========================================================================
+# Cyclic-group skins  (Z_n - additive)
 #
 # Semantics reminder
 #   op(a, b)    = a + b mod n
-#   inverse(a)  = −a mod n
-#   power_k(x)  = k·x mod n   (scalar multiplication, NOT x + k)
-# ═══════════════════════════════════════════════════════════════════════════
+#   inverse(a)  = -a mod n
+#   power_k(x)  = k*x mod n   (scalar multiplication, NOT x + k)
+# ===========================================================================
 
 class ClockArithmeticSkin(SemanticSkin):
     """Z_n presented as positions on an n-hour clock."""
@@ -175,13 +175,13 @@ class ColorWheelSkin(SemanticSkin):
         return "rotate forward by one hue"
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Symmetric-group skins  (S_n — permutation composition)
+# ===========================================================================
+# Symmetric-group skins  (S_n - permutation composition)
 #
 # Elements are 1-indexed tuples, e.g. S_3 identity = (1, 2, 3).
 #   op(a, b)    = a composed with b
 #   power_k(x)  = x composed with itself k times
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
 
 class DeckOfCardsSkin(SemanticSkin):
     """S_n presented as shuffles of a deck of n cards."""
@@ -272,12 +272,12 @@ class SeatingSkin(SemanticSkin):
         return "rearrange the seats"
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Dihedral-group skins  (D_n — symmetries of a regular n-gon)
+# ===========================================================================
+# Dihedral-group skins  (D_n - symmetries of a regular n-gon)
 #
 # Elements are (rotation_index, reflection_flag) pairs.
 #   power_k(x) = x composed with itself k times in D_n
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
 
 class PolygonSymmetriesSkin(SemanticSkin):
     """D_n presented as symmetries of a regular polygon."""
@@ -358,11 +358,11 @@ class TileFlipSkin(SemanticSkin):
         return "apply a tile move"
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Finite-field skins  (GF(p) — additive group)
+# ===========================================================================
+# Finite-field skins  (GF(p) - additive group)
 #
 # Same scalar-multiplication semantics as Z_n for power_k.
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
 
 class SecretCodesSkin(SemanticSkin):
     """GF(p) presented as a secret-code system with p symbols."""
@@ -428,10 +428,10 @@ class ModularArithmeticSkin(SemanticSkin):
         return "apply a modular operation"
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Quaternion-group skins  (Q_8 — multiplicative)
-# Elements indexed 0–7: "1", "-1", "i", "-i", "j", "-j", "k", "-k"
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
+# Quaternion-group skins  (Q_8 - multiplicative)
+# Elements indexed 0-7: "1", "-1", "i", "-i", "j", "-j", "k", "-k"
+# ===========================================================================
 
 _Q8_ALGEBRA_NAMES = ["1", "-1", "i", "-i", "j", "-j", "k", "-k"]
 
@@ -509,9 +509,9 @@ class QuaternionRotationSkin(SemanticSkin):
         return "apply a rotation operation"
 
 
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
 # Registry
-# ═══════════════════════════════════════════════════════════════════════════
+# ===========================================================================
 
 SKIN_REGISTRY: Dict[str, List[SemanticSkin]] = {
     "CyclicGroup": [

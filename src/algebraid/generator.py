@@ -181,113 +181,8 @@ def _generate_rule_induction_task(rng, depth, idx, seed, verbalizer, dimension=C
     )
 
 
-def _generate_systematicity_pair(rng, depth, idx, seed, verbalizer):
-    structure = _random_cyclic(rng, 5, 13)
-    all_ops = make_standard_operations(structure, rng)
-    if len(all_ops) < 4:
-        return []
-    f, g, h, k = rng.sample(all_ops, 4)
-
-    skin = rng.choice(SKIN_REGISTRY[structure.__class__.__name__])
-    x1 = structure.random_element(rng)
-    chain1 = ComposedFunction([f, k], structure)
-    answer1_raw = chain1(x1)
-    answer1_str = structure.element_to_str(answer1_raw)
-    task1 = Task(
-        task_id=_task_id(seed, "syst", depth, f"{idx}-1"),
-        prompt=verbalizer.verbalize_intra(structure, chain1, x1, skin=skin),
-        answer=skin.element_name(answer1_raw, structure) if skin else answer1_str,
-        answer_raw=answer1_str,
-        depth=depth,
-        family=TaskFamily.INTRA_STRUCTURE,
-        dimension=CompositionDimension.SYSTEMATICITY,
-        structures=[structure.name],
-    )
-
-    x2 = structure.random_element(rng)
-    chain2 = ComposedFunction([h, g], structure)
-    answer2_raw = chain2(x2)
-    answer2_str = structure.element_to_str(answer2_raw)
-    task2 = Task(
-        task_id=_task_id(seed, "syst", depth, f"{idx}-2"),
-        prompt=verbalizer.verbalize_intra(structure, chain2, x2, skin=skin),
-        answer=skin.element_name(answer2_raw, structure) if skin else answer2_str,
-        answer_raw=answer2_str,
-        depth=depth,
-        family=TaskFamily.INTRA_STRUCTURE,
-        dimension=CompositionDimension.SYSTEMATICITY,
-        structures=[structure.name],
-    )
-    return [task1, task2]
-
-
-def _generate_substitutivity_task(rng, depth, idx, seed, verbalizer):
-    n = rng.randint(5, 10)
-    structure = CyclicGroup(n)
-    labels = rng.sample(list("abcdefghijklmnopqrstuvwxyz"), n)
-    label_map = {i: labels[i] for i in range(n)}
-
-    all_ops = make_standard_operations(structure, rng)
-    chosen_ops = [rng.choice(all_ops) for _ in range(depth)]
-    chain = ComposedFunction(chosen_ops, structure)
-    x = structure.random_element(rng)
-    answer_raw = chain(x)
-
-    elements_str = ", ".join(labels)
-    prompt = f"Consider an algebraic structure with elements {{{elements_str}}}.\n"
-    prompt += f"The operation on this structure follows the same rules as addition modulo {n}.\n"
-    prompt += f"Starting with the element x = {label_map[x]}, perform the following operations in order:\n"
-    for i, op in enumerate(chosen_ops, 1):
-        desc = op.description
-        for elem_int, label in label_map.items():
-            desc = desc.replace(f" {elem_int} ", f" {label} ").replace(f"by {elem_int}", f"by {label}").replace(f"with {elem_int}", f"with {label}")
-        prompt += f"Step {i}: {desc}.\n"
-    prompt += "\nWhat is the final result? Give only the label."
-
-    return Task(
-        task_id=_task_id(seed, "subst", depth, idx),
-        prompt=prompt,
-        answer=label_map[answer_raw],
-        answer_raw=label_map[answer_raw],
-        depth=depth,
-        family=TaskFamily.INTRA_STRUCTURE,
-        dimension=CompositionDimension.SUBSTITUTIVITY,
-        structures=[f"Relabeled Z_{n}"],
-    )
-
-
-def _generate_overgeneralization_task(rng, depth, idx, seed, verbalizer):
-    structure = rng.choice([SymmetricGroup(3), DihedralGroup(4)])
-    elements = structure.elements()
-    attempts = 0
-    a, b = rng.sample(elements, 2)
-    while structure.op(a, b) == structure.op(b, a) and attempts < 50:
-        a, b = rng.sample(elements, 2)
-        attempts += 1
-
-    answer_raw = structure.op(a, b)
-    wrong_answer = structure.op(b, a)
-
-    prompt = (
-        f"Consider the algebraic structure {structure.name}: {structure.description}\n\n"
-        f"Compute {structure.element_to_str(a)} {structure.operation_symbol()} {structure.element_to_str(b)}."
-    )
-
-    return Task(
-        task_id=_task_id(seed, "overgen", depth, idx),
-        prompt=prompt,
-        answer=structure.element_to_str(answer_raw),
-        answer_raw=structure.element_to_str(answer_raw),
-        depth=depth,
-        family=TaskFamily.INTER_STRUCTURE,
-        dimension=CompositionDimension.OVERGENERALIZATION,
-        structures=[structure.name],
-        metadata={"wrong_answer": structure.element_to_str(wrong_answer)},
-    )
-
-
 def _element_order(structure: AlgebraicStructure, x: Any) -> int:
-    """Compute the order of element x in structure (smallest k≥1 where x^k = identity)."""
+    """Compute the order of element x in structure (smallest k>=1 where x^k = identity)."""
     e = structure.identity()
     current = x
     for k in range(1, structure.order() + 1):
@@ -445,7 +340,7 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
         prompt = prompt.rstrip() + "\nApply all operations in order, without simplifying intermediate steps."
 
     elif adv_type == "commutativity_trap":
-        # Non-abelian structure: find a, b where a*b ≠ b*a
+        # Non-abelian structure: find a, b where a*b != b*a
         struct_choice = rng.randint(0, 2)
         if struct_choice == 0:
             structure = _random_symmetric(rng)
@@ -489,7 +384,7 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
         x = structure.random_element(rng)
         n = structure.n
         neg_x = (-x) % n
-        # Chain: add neg_x to x → result is 0 (identity)
+        # Chain: add neg_x to x -> result is 0 (identity)
         op_cancel = AlgebraicOperation(
             name=f"right_mul_{neg_x}",
             func=lambda val, k: (val + k) % n,
@@ -590,7 +485,6 @@ class AlgebraidGenerator:
         depths: Optional[List[int]] = None,
         tasks_per_depth: int = 10,
         families: Optional[List[str]] = None,
-        include_dimensions: bool = True,
         use_skins: bool = True,
     ) -> TaskSet:
         if depths is None:
@@ -620,30 +514,6 @@ class AlgebraidGenerator:
                     try:
                         task = gen_func(self.rng, depth, blk_counter, self.seed, self.verbalizer)
                         all_tasks.append(task)
-                        blk_counter += 1
-                    except Exception:
-                        continue
-
-        if include_dimensions:
-            for depth in [2, 3]:
-                for i in range(tasks_per_depth // 2):
-                    try:
-                        syst_tasks = _generate_systematicity_pair(self.rng, depth, blk_counter, self.seed, self.verbalizer)
-                        all_tasks.extend(syst_tasks)
-                        blk_counter += len(syst_tasks)
-                    except Exception:
-                        continue
-
-                    try:
-                        subst_task = _generate_substitutivity_task(self.rng, depth, blk_counter, self.seed, self.verbalizer)
-                        all_tasks.append(subst_task)
-                        blk_counter += 1
-                    except Exception:
-                        continue
-
-                    try:
-                        overgen_task = _generate_overgeneralization_task(self.rng, depth, blk_counter, self.seed, self.verbalizer)
-                        all_tasks.append(overgen_task)
                         blk_counter += 1
                     except Exception:
                         continue

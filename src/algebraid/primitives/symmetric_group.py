@@ -46,7 +46,7 @@ class SymmetricGroup(AlgebraicStructure):
         return tuple(range(1, self.n + 1))
 
     def op(self, a: Permutation, b: Permutation) -> Permutation:
-        """Composition of permutations: apply b then a (i.e., a∘b means apply b first)."""
+        """Composition of permutations: apply b then a (left-to-right: a o b applies b first)."""
         return tuple(a[i - 1] for i in b)
 
     def inverse(self, a: Permutation) -> Permutation:
@@ -61,7 +61,7 @@ class SymmetricGroup(AlgebraicStructure):
         return str(a)
 
     def operation_symbol(self) -> str:
-        return "∘"
+        return "*"
 
     def is_commutative(self) -> bool:
         return self.n < 3

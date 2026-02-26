@@ -5,10 +5,9 @@ This is the simplest and most fundamental finite group, serving as the
 building block for many ALGEBRAID tasks.
 """
 
-from typing import Any, List, Optional
+from typing import Any, List, Optional, TYPE_CHECKING
 import random
 from .base import AlgebraicStructure
-from typing import Any, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from random import Random

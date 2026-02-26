@@ -97,31 +97,31 @@ class TestTask:
 
 class TestTaskSet:
     def test_len(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=5, include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=5)
         assert len(ts) == 5 * 7  # 7 families
 
     def test_getitem_int(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=3, include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=3)
         t = ts[0]
         assert isinstance(t, Task)
 
     def test_getitem_task_id(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=3, include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=3)
         first = ts[0]
         assert ts[first.task_id] == first
 
     def test_iteration(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=3, include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=3)
         count = sum(1 for _ in ts)
         assert count == len(ts)
 
     def test_summary_contains_family_names(self, gen):
-        ts = gen.generate(depths=[1], tasks_per_depth=3, include_dimensions=False)
+        ts = gen.generate(depths=[1], tasks_per_depth=3)
         summary = ts.summary()
         assert "intra-structure composition" in summary
 
     def test_jsonl_roundtrip(self, gen):
-        ts = gen.generate(depths=[1, 2], tasks_per_depth=5, include_dimensions=False)
+        ts = gen.generate(depths=[1, 2], tasks_per_depth=5)
         with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False, mode="w") as f:
             path = f.name
         try:
@@ -141,7 +141,6 @@ class TestTaskSet:
         ts = gen.generate(
             depths=[1], tasks_per_depth=3,
             families=["conceptual", "adversarial"],
-            include_dimensions=False,
         )
         with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False, mode="w") as f:
             path = f.name

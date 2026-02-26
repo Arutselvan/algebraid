@@ -16,7 +16,7 @@ from ..primitives.base import AlgebraicStructure
 from ..skins import SemanticSkin
 from ..composers.function_composition import AlgebraicOperation, ComposedFunction
 
-# ── Entity-name pools ───────────────────────────────────────────────────────
+# -- Entity-name pools -------------------------------------------------------
 
 STRUCTURE_ALIASES: List[str] = [
     "system", "structure", "set with operation", "algebraic system",
@@ -25,7 +25,7 @@ STRUCTURE_ALIASES: List[str] = [
 ]
 
 ELEMENT_LABEL_POOLS: Dict[str, List[str]] = {
-    "greek": list("αβγδεζηθικλμνξοπρστυφχψω"),
+    "greek": list("alphaβγδεζηθικλμνξοπρστυφχψω"),
     "emoji_safe": [f"e{i}" for i in range(30)],
     "colors": [
         "red", "blue", "green", "yellow", "purple", "orange", "cyan",
@@ -87,7 +87,7 @@ CONTEXT_FRAMES: Dict[str, Dict[str, str]] = {
     },
 }
 
-# ── Template pools ──────────────────────────────────────────────────────────
+# -- Template pools ----------------------------------------------------------
 
 INTRA_TEMPLATES: List[Dict[str, str]] = [
     {
@@ -217,7 +217,7 @@ RULE_TEMPLATES: List[Dict[str, str]] = [
     },
 ]
 
-# ── Conceptual query templates ───────────────────────────────────────────────
+# -- Conceptual query templates -----------------------------------------------
 # Keyed by query_subtype; each has 3+ surface-form variants.
 
 CONCEPTUAL_TEMPLATES: Dict[str, List[str]] = {
@@ -228,7 +228,7 @@ CONCEPTUAL_TEMPLATES: Dict[str, List[str]] = {
     ],
     "element_order": [
         "In {name} {short_desc}, what is the order of the element {x}?\n(The order is the smallest positive integer k such that applying the operation k times to {x} returns the identity.)\nGive only the integer answer.",
-        "How many times must you apply {sym} to {x} with itself (i.e. compute {x}, {x}{sym}{x}, {x}{sym}{x}{sym}{x}, …) before you first reach the identity in {name} {short_desc}? Give only the count.",
+        "How many times must you apply {sym} to {x} with itself (i.e. compute {x}, {x}{sym}{x}, {x}{sym}{x}{sym}{x}, ...) before you first reach the identity in {name} {short_desc}? Give only the count.",
         "Find ord({x}) in {name} {short_desc}. Give only the integer answer.",
     ],
     "commutativity_check": [
@@ -258,7 +258,7 @@ CONCEPTUAL_TEMPLATES: Dict[str, List[str]] = {
     ],
 }
 
-# ── Intermediate-state templates ─────────────────────────────────────────────
+# -- Intermediate-state templates ---------------------------------------------
 
 INTERMEDIATE_TEMPLATES: List[str] = [
     (
@@ -279,11 +279,11 @@ INTERMEDIATE_TEMPLATES: List[str] = [
     ),
 ]
 
-# ── Verify-format templates ───────────────────────────────────────────────────
+# -- Verify-format templates ---------------------------------------------------
 
 VERIFY_TEMPLATES: List[str] = [
     "In {name} {short_desc}: is it true that {claim}? Answer Yes or No.",
-    "Working in {name} {short_desc} — does the following hold? {claim}\nAnswer Yes or No.",
+    "Working in {name} {short_desc}  - does the following hold? {claim}\nAnswer Yes or No.",
     "True or False (in {name} {short_desc}): {claim}\nAnswer Yes or No.",
 ]
 
@@ -327,7 +327,7 @@ class Verbalizer:
             if n is not None:
                 intro = intro.replace("{n}", str(n)).replace("{n_minus_1}", str(n - 1))
             elif "{n}" in intro:
-                # Frame requires {n} but structure has no such attribute — skip frame
+                # Frame requires {n} but structure has no such attribute  - skip frame
                 return lines
             return [intro, ""] + lines
         return lines

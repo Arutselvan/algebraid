@@ -12,7 +12,7 @@ class DirectProduct(AlgebraicStructure):
     """
     Direct product G x H of two algebraic structures.
 
-    Elements are tuples (g, h) where g ∈ G and h ∈ H.
+    Elements are tuples (g, h) where g in G and h in H.
     Operations are applied component-wise.
     """
 
@@ -28,7 +28,7 @@ class DirectProduct(AlgebraicStructure):
     def description(self) -> str:
         return (
             f"The direct product of {self.G.name} and {self.H.name}. "
-            f"Elements are pairs (a, b) where a ∈ {self.G.name} and b ∈ {self.H.name}. "
+            f"Elements are pairs (a, b) where a in {self.G.name} and b in {self.H.name}. "
             f"The operation is applied component-wise: "
             f"(a1, b1) {self.G.operation_symbol()} (a2, b2) = "
             f"(a1 {self.G.operation_symbol()} a2, b1 {self.H.operation_symbol()} b2)."
@@ -67,6 +67,6 @@ class DirectProduct(AlgebraicStructure):
     @property
     def composition_depth(self) -> int:
         """Track how deeply composed this structure is."""
-        g_depth: int | Any = getattr(self.G, 'composition_depth', 0)
-        h_depth: int | Any = getattr(self.H, 'composition_depth', 0)
+        g_depth: int = getattr(self.G, 'composition_depth', 0)
+        h_depth: int = getattr(self.H, 'composition_depth', 0)
         return max(g_depth, h_depth) + 1

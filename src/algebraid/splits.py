@@ -5,7 +5,7 @@ Addresses paper Blocker 4 (No Generalisation Study) by providing
 principled splits that let researchers test compositional generalisation
 along four axes:
 
-  split_by_depth()         Train depth ≤ k, test depth ≥ k+gap (default gap=2)
+  split_by_depth()         Train depth <= k, test depth >= k+gap (default gap=2)
   split_by_commutativity() Train on abelian (Z_n, GF(p)), test on non-abelian
   split_by_structure()     Train on structure-name prefixes, test on others
   split_by_family()        Train on task families, test on others
@@ -15,16 +15,16 @@ Each function returns a (train: TaskSet, test: TaskSet) pair.
 Example research questions these splits answer
 -----------------------------------------------
   "Does the model generalise to longer chains unseen during training?"
-      → split_by_depth(task_set, train_max_depth=2)
+      -> split_by_depth(task_set, train_max_depth=2)
 
   "Does abelian training transfer to non-abelian structures?"
-      → split_by_commutativity(task_set)
+      -> split_by_commutativity(task_set)
 
   "Does training on Z_5 and Z_7 transfer to Z_11?"
-      → split_by_structure(ts, train_prefixes=["Z_5","Z_7"], test_prefixes=["Z_11"])
+      -> split_by_structure(ts, train_prefixes=["Z_5","Z_7"], test_prefixes=["Z_11"])
 
   "Does intra-structure training transfer to inter-structure tasks?"
-      → split_by_family(ts, ["intra"], ["inter"])
+      -> split_by_family(ts, ["intra"], ["inter"])
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from typing import List, Optional, Set, Tuple
 from .task_model import Task, TaskSet
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 
 #: Name prefixes whose structures are provably abelian.
 _ABELIAN_PREFIXES: Set[str] = {"Z_", "GF("}
@@ -73,7 +73,7 @@ def _make_pair(
     return train, test
 
 
-# ── 1. Depth split ───────────────────────────────────────────────────────────
+# -- 1. Depth split -----------------------------------------------------------
 
 def split_by_depth(
     task_set: TaskSet,
@@ -83,8 +83,8 @@ def split_by_depth(
     """
     Split by composition depth.
 
-    Train : depth ≤ train_max_depth
-    Test  : depth ≥ test_min_depth  (default: train_max_depth + 2)
+    Train : depth <= train_max_depth
+    Test  : depth >= test_min_depth  (default: train_max_depth + 2)
 
     The gap between the two thresholds acts as an extrapolation buffer.
     Tasks at depth train_max_depth+1 are excluded from both sets so the
@@ -105,7 +105,7 @@ def split_by_depth(
     return _make_pair(train_tasks, test_tasks, task_set.name)
 
 
-# ── 2. Commutativity split ───────────────────────────────────────────────────
+# -- 2. Commutativity split ---------------------------------------------------
 
 def split_by_commutativity(task_set: TaskSet) -> Tuple[TaskSet, TaskSet]:
     """
@@ -132,7 +132,7 @@ def split_by_commutativity(task_set: TaskSet) -> Tuple[TaskSet, TaskSet]:
     return _make_pair(train_tasks, test_tasks, task_set.name)
 
 
-# ── 3. Structure-name split ──────────────────────────────────────────────────
+# -- 3. Structure-name split --------------------------------------------------
 
 def split_by_structure(
     task_set: TaskSet,
@@ -155,10 +155,10 @@ def split_by_structure(
 
     Research questions
     ------------------
-    "Train on Z_5, Z_7 → test on Z_11":
+    "Train on Z_5, Z_7 -> test on Z_11":
         split_by_structure(ts, ["Z_5","Z_7"], ["Z_11"])
 
-    "Train on cyclic → test on symmetric/dihedral/quaternion":
+    "Train on cyclic -> test on symmetric/dihedral/quaternion":
         split_by_structure(ts, ["Z_"], ["S_","D_","Q_8"])
     """
     def _matches(task: Task, prefixes: List[str]) -> bool:
@@ -174,7 +174,7 @@ def split_by_structure(
     return _make_pair(train_tasks, test_tasks, task_set.name)
 
 
-# ── 4. Task-family split ─────────────────────────────────────────────────────
+# -- 4. Task-family split -----------------------------------------------------
 
 #: Short-hand keys accepted in train_families / test_families.
 _FAMILY_SHORT: dict = {
@@ -207,10 +207,10 @@ def split_by_family(
 
     Research question
     -----------------
-    "Train on intra-structure chains → test on inter-structure chains":
+    "Train on intra-structure chains -> test on inter-structure chains":
         split_by_family(ts, ["intra"], ["inter"])
 
-    "Train on non-adversarial → test on adversarial traps":
+    "Train on non-adversarial -> test on adversarial traps":
         split_by_family(ts, ["intra","inter","field","rule","conceptual"],
                             ["adversarial"])
     """
@@ -238,15 +238,15 @@ def split_by_family(
     return _make_pair(train_tasks, test_tasks, task_set.name)
 
 
-# ── Convenience ──────────────────────────────────────────────────────────────
+# -- Convenience --------------------------------------------------------------
 
 def split_summary(train: TaskSet, test: TaskSet) -> str:
     """Return a compact multi-line split summary string."""
     def _depth_range(ts: TaskSet) -> str:
         if not ts:
-            return "—"
+            return "-"
         depths = sorted({t.depth for t in ts})
-        return f"{depths[0]}–{depths[-1]}" if len(depths) > 1 else str(depths[0])
+        return f"{depths[0]}-{depths[-1]}" if len(depths) > 1 else str(depths[0])
 
     def _structure_counts(ts: TaskSet) -> str:
         from collections import Counter

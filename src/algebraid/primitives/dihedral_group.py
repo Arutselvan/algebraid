@@ -5,8 +5,8 @@ D_n has 2n elements: n rotations and n reflections. It is non-commutative
 for n >= 3, and is naturally a semidirect product of Z_n and Z_2.
 
 Elements are represented as (r, s) where:
-- r ∈ {0, 1, ..., n-1} is the rotation index
-- s ∈ {0, 1} indicates whether a reflection is applied (0 = no, 1 = yes)
+- r in {0, 1, ..., n-1} is the rotation index
+- s in {0, 1} indicates whether a reflection is applied (0 = no, 1 = yes)
 
 The group operation follows: (r1, s1) * (r2, s2) = (r1 + (-1)^s1 * r2 mod n, s1 XOR s2)
 """
@@ -35,7 +35,7 @@ class DihedralGroup(AlgebraicStructure):
 
     @property
     def description(self) -> str:
-        return f"The dihedral group D_{self.n}, the group of symmetries of a regular {self.n}-gon. It has {2 * self.n} elements: {self.n} rotations and {self.n} reflections. Elements are written as (r, s) where r is the rotation index r ∈ {{0, ..., {self.n - 1}}} and s is 0 (no reflection) or 1 (reflection)."
+        return f"The dihedral group D_{self.n}, the group of symmetries of a regular {self.n}-gon. It has {2 * self.n} elements: {self.n} rotations and {self.n} reflections. Elements are written as (r, s) where r is the rotation index r in {{0, ..., {self.n - 1}}} and s is 0 (no reflection) or 1 (reflection)."
 
     @property
     def short_description(self) -> str:
@@ -86,16 +86,6 @@ class DihedralGroup(AlgebraicStructure):
         if r == 0:
             return f"s"
         return f"r^{r}s"
-
-    def element_to_str_verbose(self, a: DihedralElement) -> str:
-        r, s = a
-        if r == 0 and s == 0:
-            return "identity (no rotation, no reflection)"
-        if s == 0:
-            return f"rotation by {r} * 360 // {self.n} degrees"
-        if r == 0:
-            return "reflection (across the primary axis)"
-        return f"rotation by {r} * 360 // {self.n} degrees followed by reflection"
 
     def operation_symbol(self) -> str:
         return "*"

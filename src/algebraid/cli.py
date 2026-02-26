@@ -35,7 +35,7 @@ from .splits import (
 )
 
 
-# ── naming helpers ──────────────────────────────────────────────────────────
+# -- naming helpers ----------------------------------------------------------
 
 def _config_hash(depths: list, tasks_per_depth: int, families: list) -> str:
     """Return a short 6-char hex hash of the generation configuration."""
@@ -88,7 +88,7 @@ def _default_report_path(task_set_path: str, model_name: str) -> str:
     return f"./results/report_{_sanitize(model_name)}_{_stem(task_set_path)}_{_timestamp()}.json"
 
 
-# ── generate ────────────────────────────────────────────────────────────────
+# -- generate ----------------------------------------------------------------
 
 def _generate(args: argparse.Namespace) -> None:
     output = args.output or _default_task_path(
@@ -101,7 +101,6 @@ def _generate(args: argparse.Namespace) -> None:
         depths=args.depths,
         tasks_per_depth=args.tasks_per_depth,
         families=args.families,
-        include_dimensions=not args.no_dims,
     )
 
     out_dir = os.path.dirname(output)
@@ -118,7 +117,7 @@ def _generate(args: argparse.Namespace) -> None:
             print(f"WARNING: {report['failed']} task(s) failed validation.")
 
 
-# ── run ─────────────────────────────────────────────────────────────────────
+# -- run ---------------------------------------------------------------------
 
 def _run(args: argparse.Namespace) -> None:
     if not os.path.exists(args.task_set):
@@ -150,7 +149,7 @@ def _run(args: argparse.Namespace) -> None:
     print(f"Predictions saved to {output}")
 
 
-# ── evaluate ────────────────────────────────────────────────────────────────
+# -- evaluate ----------------------------------------------------------------
 
 def _evaluate(args: argparse.Namespace) -> None:
     for path, label in [(args.task_set, "Task set"), (args.predictions, "Predictions")]:
@@ -179,7 +178,7 @@ def _evaluate(args: argparse.Namespace) -> None:
     report.print_summary()
 
 
-# ── pipeline ────────────────────────────────────────────────────────────────
+# -- pipeline ----------------------------------------------------------------
 
 def _pipeline(args: argparse.Namespace) -> None:
     """
@@ -211,7 +210,7 @@ def _pipeline(args: argparse.Namespace) -> None:
     total_steps = 2 + (0 if args.skip_prove else 1) + (0 if args.skip_analyze else 1)
     step = 1
 
-    # ── Step 1: Run model ───────────────────────────────────────────────────
+    # -- Step 1: Run model ---------------------------------------------------
     print(f"\n[{step}/{total_steps}] Running {len(task_set)} tasks on {args.model} ...")
     step += 1
 
@@ -233,7 +232,7 @@ def _pipeline(args: argparse.Namespace) -> None:
         json.dump(predictions, f, indent=2)
     print(f"      Saved -> predictions.json")
 
-    # ── Step 2: Evaluate ────────────────────────────────────────────────────
+    # -- Step 2: Evaluate ----------------------------------------------------
     print(f"\n[{step}/{total_steps}] Evaluating predictions ...")
     step += 1
 
@@ -252,7 +251,7 @@ def _pipeline(args: argparse.Namespace) -> None:
     print(f"      Saved -> eval_report.json")
     report.print_summary()
 
-    # ── Step 3: Prove ───────────────────────────────────────────────────────
+    # -- Step 3: Prove -------------------------------------------------------
     proof_path = None
     if not args.skip_prove:
         print(f"\n[{step}/{total_steps}] Running algebraic proof verification ...")
@@ -269,7 +268,7 @@ def _pipeline(args: argparse.Namespace) -> None:
         print(f"\n[{step}/{total_steps}] Proof verification skipped (--skip-prove).")
         step += 1
 
-    # ── Step 4: Analyze ─────────────────────────────────────────────────────
+    # -- Step 4: Analyze -----------------------------------------------------
     analysis_path = None
     if not args.skip_analyze:
         print(f"\n[{step}/{total_steps}] Running error analysis ...")
@@ -285,7 +284,7 @@ def _pipeline(args: argparse.Namespace) -> None:
     else:
         print(f"\n[{step}/{total_steps}] Error analysis skipped (--skip-analyze).")
 
-    # ── Manifest ────────────────────────────────────────────────────────────
+    # -- Manifest ------------------------------------------------------------
     manifest = {
         "run_id": rid,
         "timestamp": ts,
@@ -317,7 +316,7 @@ def _pipeline(args: argparse.Namespace) -> None:
     print(f"{'='*60}\n")
 
 
-# ── validate ────────────────────────────────────────────────────────────────
+# -- validate ----------------------------------------------------------------
 
 def _validate(args: argparse.Namespace) -> None:
     if not os.path.exists(args.task_set):
@@ -337,7 +336,7 @@ def _validate(args: argparse.Namespace) -> None:
         print(f"Report saved to {args.output}")
 
 
-# ── prove ────────────────────────────────────────────────────────────────────
+# -- prove --------------------------------------------------------------------
 
 def _prove(args: argparse.Namespace) -> None:
     if not os.path.exists(args.task_set):
@@ -358,7 +357,7 @@ def _prove(args: argparse.Namespace) -> None:
         print(f"Proof report saved to {args.output}")
 
 
-# ── analyze ──────────────────────────────────────────────────────────────────
+# -- analyze ------------------------------------------------------------------
 
 def _analyze(args: argparse.Namespace) -> None:
     if not os.path.exists(args.report):
@@ -388,7 +387,7 @@ def _analyze(args: argparse.Namespace) -> None:
         print(f"Analysis saved to {args.output}")
 
 
-# ── split ────────────────────────────────────────────────────────────────────
+# -- split --------------------------------------------------------------------
 
 def _split(args: argparse.Namespace) -> None:
     if not os.path.exists(args.task_set):
@@ -430,7 +429,7 @@ def _split(args: argparse.Namespace) -> None:
     print(f"Test  split -> {test_path}")
 
 
-# ── entry point ──────────────────────────────────────────────────────────────
+# -- entry point --------------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -459,8 +458,6 @@ def main() -> None:
             "adversarial=reversible chain traps, intermediate=partial chain queries."
         ),
     )
-    p.add_argument("--no-dims", action="store_true",
-                   help="Exclude Hupkes compositionality dimensions.")
     p.add_argument("--skip-validation", action="store_true",
                    help="Skip post-generation validation.")
     p.set_defaults(func=_generate)

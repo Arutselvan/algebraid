@@ -18,7 +18,7 @@ the algebraic primitive implementations, which are themselves tested by
 the group-axiom tests in tests/test_primitives.py.
 
 Tasks without a solution_trace (conceptual queries, rule-induction tasks)
-are marked ``verified=True, steps_checked=0`` — they are "skipped" rather
+are marked ``verified=True, steps_checked=0`` - they are "skipped" rather
 than "proven".  Their correctness is guaranteed by construction: the
 generator computes the answers by direct algebraic computation rather than
 by following a trace, and the conceptual-task correctness tests in
@@ -38,14 +38,14 @@ from .primitives import (
 from .primitives.base import AlgebraicStructure
 
 
-# ── Q_8 element name → internal index ───────────────────────────────────────
+# -- Q_8 element name -> internal index ---------------------------------------
 
 _Q8_NAME_TO_IDX: Dict[str, int] = {
     "1": 0, "-1": 1, "i": 2, "-i": 3, "j": 4, "-j": 5, "k": 6, "-k": 7,
 }
 
 
-# ── Structure reconstruction ─────────────────────────────────────────────────
+# -- Structure reconstruction -------------------------------------------------
 
 def _parse_structure(name: str) -> Optional[AlgebraicStructure]:
     """Reconstruct an algebraic structure from its canonical name string."""
@@ -67,7 +67,7 @@ def _parse_structure(name: str) -> Optional[AlgebraicStructure]:
     return None  # direct products or unknown
 
 
-# ── Element parsing ──────────────────────────────────────────────────────────
+# -- Element parsing ----------------------------------------------------------
 
 def _parse_element(s: str, structure: AlgebraicStructure) -> Any:
     """Parse a string element representation to its internal form."""
@@ -95,18 +95,18 @@ def _parse_element(s: str, structure: AlgebraicStructure) -> Any:
     raise ValueError(f"Cannot parse element {s!r} for {structure.name}")
 
 
-# ── Operation re-application ─────────────────────────────────────────────────
+# -- Operation re-application -------------------------------------------------
 
 def _apply_named_op(op_name: str, val: Any, structure: AlgebraicStructure) -> Any:
     """
     Re-apply a generator operation by name to a value, from first principles.
 
     Recognises:
-      inverse          — structure.inverse(val)
-      right_mul_{k}    — structure.op(val, k)
-      left_mul_{k}     — structure.op(k, val)
-      power_{n}        — val composed with itself n times
-      conj_{k}         — k * val * k^{-1}
+      inverse          - structure.inverse(val)
+      right_mul_{k}    - structure.op(val, k)
+      left_mul_{k}     - structure.op(k, val)
+      power_{n}        - val composed with itself n times
+      conj_{k}         - k * val * k^{-1}
     """
     if op_name == "start":
         return val
@@ -142,7 +142,7 @@ def _apply_named_op(op_name: str, val: Any, structure: AlgebraicStructure) -> An
     raise ValueError(f"Unrecognised operation: {op_name!r}")
 
 
-# ── Proof result ─────────────────────────────────────────────────────────────
+# -- Proof result -------------------------------------------------------------
 
 @dataclass
 class ProofResult:
@@ -154,7 +154,7 @@ class ProofResult:
     error_message: Optional[str] = None
 
 
-# ── Single-task verifier ─────────────────────────────────────────────────────
+# -- Single-task verifier -----------------------------------------------------
 
 def verify_task(task: Task) -> ProofResult:
     """
@@ -232,7 +232,7 @@ def verify_task(task: Task) -> ProofResult:
         )
 
 
-# ── Batch verifier ───────────────────────────────────────────────────────────
+# -- Batch verifier -----------------------------------------------------------
 
 def verify_set(task_set: TaskSet) -> Dict[str, Any]:
     """Verify every task in a TaskSet and return a proof report dict."""
