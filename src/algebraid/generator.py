@@ -98,11 +98,12 @@ def _generate_intra_structure_task(rng, depth, idx, seed, verbalizer, dimension=
         family=TaskFamily.INTRA_STRUCTURE,
         dimension=dimension,
         structures=[structure.name],
+        metadata={"skin": skin.name if skin else None},
         solution_trace=[(op_name, structure.element_to_str(val)) for op_name, val in trace],
     )
 
 
-def _generate_inter_structure_task(rng, depth, idx, seed, verbalizer, dimension=CompositionDimension.GENERAL):
+def _generate_inter_structure_task(rng, depth, idx, seed, verbalizer, dimension=CompositionDimension.GENERAL, use_skins=True):
     structures = [_random_cyclic(rng, 2, 7) for _ in range(depth + 1)]
     composed = structures[0]
     for s in structures[1:]:
@@ -136,7 +137,7 @@ def _generate_inter_structure_task(rng, depth, idx, seed, verbalizer, dimension=
     )
 
 
-def _generate_field_arithmetic_task(rng, depth, idx, seed, verbalizer, dimension=CompositionDimension.GENERAL):
+def _generate_field_arithmetic_task(rng, depth, idx, seed, verbalizer, dimension=CompositionDimension.GENERAL, use_skins=True):
     field = _random_field(rng)
     expr_str, answer_raw = _build_field_expression(field, depth, rng)
     prompt = verbalizer.verbalize_field(field, expr_str)
@@ -178,6 +179,7 @@ def _generate_rule_induction_task(rng, depth, idx, seed, verbalizer, dimension=C
         family=TaskFamily.RULE_INDUCTION,
         dimension=dimension,
         structures=[structure.name],
+        metadata={"skin": skin.name if skin else None},
     )
 
 
@@ -192,7 +194,7 @@ def _element_order(structure: AlgebraicStructure, x: Any) -> int:
     return structure.order()  # fallback (should not occur for finite groups)
 
 
-def _generate_conceptual_task(rng, depth, idx, seed, verbalizer):
+def _generate_conceptual_task(rng, depth, idx, seed, verbalizer, use_skins=True):
     """Generate a conceptual query task (identity, order, commutativity, etc.)."""
     # Query subtypes weighted: is_generator only for CyclicGroup
     general_subtypes = [
@@ -225,6 +227,11 @@ def _generate_conceptual_task(rng, depth, idx, seed, verbalizer):
             while structure.op(a, b) == structure.op(b, a) and attempts < 30:
                 a, b = rng.choice(elements), rng.choice(elements)
                 attempts += 1
+            if structure.op(a, b) == structure.op(b, a):
+                raise ValueError(
+                    f"commutativity_check: could not find a non-commuting pair in "
+                    f"{structure.name} after 30 attempts"
+                )
         answer_raw = "yes" if structure.op(a, b) == structure.op(b, a) else "no"
         prompt = verbalizer.verbalize_conceptual(structure, "commutativity_check", a=a, b=b)
     elif subtype == "structure_order":
@@ -260,8 +267,21 @@ def _generate_conceptual_task(rng, depth, idx, seed, verbalizer):
 
 
 def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True):
-    """Generate an adversarial reversible-chain task designed to trap common errors."""
-    adv_type = rng.choice(["double_inverse", "self_cancelling", "commutativity_trap", "identity_bait"])
+    """Generate an adversarial reversible-chain task designed to trap common errors.
+
+    The ``depth`` parameter controls chain length:
+      - depth == 1: ``identity_bait`` or ``commutativity_trap`` (1-op chains)
+      - depth >= 2: ``double_inverse`` (depth inverse ops, always cancels for even
+        depth) or ``self_cancelling`` (depth ops that sum to 0 mod n).
+    """
+    if depth <= 1:
+        adv_type = rng.choice(["commutativity_trap", "identity_bait"])
+    elif depth % 2 == 0:
+        # double_inverse requires an even number of inversions to cancel back to x.
+        adv_type = rng.choice(["double_inverse", "self_cancelling"])
+    else:
+        # Odd depths can only use self_cancelling (depth ops summing to 0 mod n).
+        adv_type = "self_cancelling"
 
     if adv_type == "double_inverse":
         structure = _random_structure(rng)
@@ -272,14 +292,17 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
         if not inv_ops:
             raise ValueError("No inverse operation found")
         inv_op = inv_ops[0]
-        chain = ComposedFunction([inv_op, inv_op], structure)
+        # Use `depth` inverse operations: even depth cancels back to x (the trap),
+        # odd depth gives a single net inverse.  Always >= 2 (depth is guaranteed
+        # >= 2 by the routing above).
+        chain = ComposedFunction([inv_op] * depth, structure)
         answer_raw_val = chain(x)
-        wrong_val = structure.inverse(x)
+        wrong_val = structure.inverse(x)  # stopping one step early
         trace = chain.trace(x)
         wrong_str = structure.element_to_str(wrong_val)
         rationale = (
             f"Applying inverse once gives {wrong_str}; "
-            "a model that stops early misses the second inverse which restores the original."
+            "a model that stops early misses subsequent inverses."
         )
         prompt = verbalizer.verbalize_intra(structure, chain, x, skin=skin)
         # Inject adversarial annotation
@@ -291,32 +314,37 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
         x = structure.random_element(rng)
         n = structure.n
         c = rng.randint(1, n - 1)
-        neg_c = (-c) % n
-        # Build right_mul ops: (x + c) then (x + n - c) = x (self-cancelling)
-        op_add_r = AlgebraicOperation(
-            name=f"right_mul_{c}",
-            func=lambda val, k: (val + k) % n,
+        # Build a chain of `depth` ops that sums to 0 mod n:
+        #   first (depth-1) ops each add c; final op adds -(depth-1)*c mod n.
+        # This generalises the 2-op case to arbitrary depth >= 2.
+        cancel_val = (-(depth - 1) * c) % n
+        ops_list = []
+        for _ in range(depth - 1):
+            k = c
+            ops_list.append(AlgebraicOperation(
+                name=f"right_mul_{k}",
+                func=lambda val, kk=k, nn=n: (val + kk) % nn,
+                arity=1,
+                description=f"add {k} (mod {n})",
+                symbol=f"+{k}",
+                fixed_args=(),
+            ))
+        ops_list.append(AlgebraicOperation(
+            name=f"right_mul_{cancel_val}",
+            func=lambda val, kk=cancel_val, nn=n: (val + kk) % nn,
             arity=1,
-            description=f"add {c} (mod {n})",
-            symbol=f"+{c}",
-            fixed_args=(c,),
-        )
-        op_sub_r = AlgebraicOperation(
-            name=f"right_mul_{neg_c}",
-            func=lambda val, k: (val + k) % n,
-            arity=1,
-            description=f"add {neg_c} (mod {n})",
-            symbol=f"+{neg_c}",
-            fixed_args=(neg_c,),
-        )
-        chain = ComposedFunction([op_add_r, op_sub_r], structure)
+            description=f"add {cancel_val} (mod {n})",
+            symbol=f"+{cancel_val}",
+            fixed_args=(),
+        ))
+        chain = ComposedFunction(ops_list, structure)
         answer_raw_val = chain(x)
-        wrong_val = (x + c) % n
+        wrong_val = (x + c) % n  # stopping after the first +c
         trace = chain.trace(x)
         wrong_str = str(wrong_val)
         rationale = (
             f"After adding {c} the value is {wrong_str}; "
-            f"a model that ignores the second step (+{neg_c}) stops there."
+            "a model that ignores the remaining steps stops there."
         )
         prompt = verbalizer.verbalize_intra(structure, chain, x, skin=skin)
         prompt = prompt.rstrip() + "\nApply all operations in order, without simplifying intermediate steps."
@@ -338,6 +366,11 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
         while structure.op(a_elem, b_elem) == structure.op(b_elem, a_elem) and attempts < 50:
             a_elem, b_elem = rng.choice(elements), rng.choice(elements)
             attempts += 1
+        if structure.op(a_elem, b_elem) == structure.op(b_elem, a_elem):
+            raise ValueError(
+                f"commutativity_trap: could not find a non-commuting pair in "
+                f"{structure.name} after 50 attempts"
+            )
         # Build chain: start with a, right-multiply by b
         b_op = AlgebraicOperation(
             name=f"right_mul_{structure.element_to_str(b_elem)}",
@@ -405,6 +438,7 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
             "adversarial_type": adv_type,
             "wrong_answer": wrong_str,
             "wrong_answer_rationale": rationale,
+            "skin": skin.name if skin else None,
         },
         solution_trace=[(op_name, structure.element_to_str(val)) for op_name, val in trace],
     )
@@ -449,6 +483,7 @@ def _generate_intermediate_state_task(rng, depth, idx, seed, verbalizer, use_ski
             "query_step": k,
             "total_steps": depth,
             "final_answer": final_str,
+            "skin": skin.name if skin else None,
         },
         solution_trace=[(op_name, structure.element_to_str(val)) for op_name, val in full_trace[:k + 1]],
     )
@@ -494,7 +529,7 @@ class AlgebraidGenerator:
                     continue
                 for i in range(tasks_per_depth):
                     try:
-                        task = gen_func(self.rng, depth, blk_counter, self.seed, self.verbalizer)
+                        task = gen_func(self.rng, depth, blk_counter, self.seed, self.verbalizer, use_skins=use_skins)  # type: ignore[operator]
                         all_tasks.append(task)
                         blk_counter += 1
                     except Exception as exc:
@@ -534,7 +569,8 @@ class AlgebraidGenerator:
                     )
                     tasks.append(task)
                     blk += 1
-                except Exception:
+                except Exception as exc:
+                    print(f"WARNING: skipped productivity depth={depth} idx={i}: {exc}")
                     continue
 
         return TaskSet(

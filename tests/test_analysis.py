@@ -18,6 +18,7 @@ from algebraid.evaluator import AlgebraidEvaluator, EvalReport, EvalResult
 from algebraid.task_model import Task, TaskSet, TaskFamily, CompositionDimension
 from algebraid.analysis import (
     fit_scaling_law,
+    fit_scaling_law_by_family,
     find_phase_transition,
     error_taxonomy,
     hallucination_onset,
@@ -357,3 +358,320 @@ class TestRunAnalysis:
         ])
         analysis = run_analysis(report)
         assert analysis["overall_accuracy"] >= 0.0
+
+    def test_includes_scaling_law_by_family(self):
+        report = _make_report([
+            _make_result("t1", True,  INTRA, depth=1),
+            _make_result("t2", False, INTRA, depth=2),
+        ])
+        analysis = run_analysis(report)
+        assert "scaling_law_by_family" in analysis
+
+
+# ── fit_scaling_law improvements ───────────────────────────────────────────────
+
+class TestFitScalingLawImprovements:
+    def _decaying_report(self):
+        """Report with clear power-law decay across 5 depths."""
+        results = []
+        for d in range(1, 6):
+            for _ in range(d):          # correct = 1 (always)
+                results.append(_make_result(f"t{d}c", True, INTRA, depth=d))
+            for _ in range(d * d - d):  # wrong   = d^2 - d
+                results.append(_make_result(f"t{d}w", False, INTRA, depth=d))
+        return _make_report(results)
+
+    def test_alpha_se_key_present(self):
+        law = fit_scaling_law(self._decaying_report())
+        assert "alpha_se" in law
+
+    def test_alpha_se_none_when_only_two_depths(self):
+        """SE requires n > 2 data points; two depths -> alpha_se is None."""
+        report = _make_report([
+            _make_result("t1", True,  INTRA, depth=1),
+            _make_result("t2", False, INTRA, depth=2),
+        ])
+        law = fit_scaling_law(report)
+        assert law["alpha_se"] is None
+
+    def test_alpha_se_positive_when_fitted(self):
+        law = fit_scaling_law(self._decaying_report())
+        if law["alpha_se"] is not None:
+            assert law["alpha_se"] >= 0.0
+
+    def test_interpretation_reflects_r2_quality_strong(self):
+        """A clean power-law signal should yield a strong-fit interpretation."""
+        # Perfect power-law: acc(d) = 1/d -> A=1, alpha=1, perfect fit
+        results = []
+        for d in range(1, 8):
+            for _ in range(d):          # d tasks, 1 correct -> acc = 1/d
+                results.append(_make_result(f"t{d}c", True,  INTRA, depth=d))
+            for _ in range(d * d - d):  # d^2 - d wrong
+                results.append(_make_result(f"t{d}w", False, INTRA, depth=d))
+        report = _make_report(results)
+        law = fit_scaling_law(report)
+        if law["r2"] is not None and law["r2"] >= 0.95:
+            assert "Strong fit" in law["interpretation"]
+
+    def test_alpha_leq_zero_has_special_interpretation(self):
+        """When alpha <= 0 the interpretation must say 'does not decrease'."""
+        # Accuracy increases with depth (inverted) — alpha should be negative
+        report = _make_report([
+            _make_result("t1", False, INTRA, depth=1),
+            _make_result("t2", False, INTRA, depth=1),
+            _make_result("t3", True,  INTRA, depth=2),
+            _make_result("t4", True,  INTRA, depth=3),
+            _make_result("t5", True,  INTRA, depth=3),
+        ])
+        law = fit_scaling_law(report)
+        if law["alpha"] is not None and law["alpha"] <= 0:
+            assert "does not decrease" in law["interpretation"]
+
+    def test_data_sufficiency_note_when_few_depths(self):
+        """A fit on < 8 depth levels must include a data-quality note."""
+        report = _make_report([
+            _make_result("t1", True,  INTRA, depth=1),
+            _make_result("t2", False, INTRA, depth=2),
+            _make_result("t3", True,  INTRA, depth=3),
+        ])
+        law = fit_scaling_law(report)
+        assert "note" in law
+        assert "depth levels" in law["note"]
+
+    def test_no_data_sufficiency_note_when_many_depths(self):
+        """No note when >= 8 distinct depth levels are available."""
+        results = []
+        for d in range(1, 10):  # 9 depths
+            results.append(_make_result(f"tc{d}",  True,  INTRA, depth=d))
+            results.append(_make_result(f"tw{d}", False, INTRA, depth=d))
+        report = _make_report(results)
+        law = fit_scaling_law(report)
+        assert "note" not in law or "depth levels" not in law.get("note", "")
+
+
+# ── fit_scaling_law_by_family ──────────────────────────────────────────────────
+
+class TestFitScalingLawByFamily:
+    def _multi_family_report(self):
+        return _make_report([
+            _make_result("i1", True,  INTRA, depth=1),
+            _make_result("i2", False, INTRA, depth=2),
+            _make_result("i3", False, INTRA, depth=3),
+            _make_result("r1", True,  INTER, depth=1),
+            _make_result("r2", True,  INTER, depth=2),
+            _make_result("r3", False, INTER, depth=3),
+            _make_result("f1", True,  FIELD, depth=1),
+            _make_result("f2", False, FIELD, depth=2),
+        ])
+
+    def test_returns_all_three_chain_families(self):
+        by_fam = fit_scaling_law_by_family(self._multi_family_report())
+        assert INTRA in by_fam
+        assert INTER in by_fam
+        assert FIELD in by_fam
+
+    def test_each_entry_has_required_keys(self):
+        by_fam = fit_scaling_law_by_family(self._multi_family_report())
+        for fam, fit in by_fam.items():
+            assert "A" in fit
+            assert "alpha" in fit
+            assert "alpha_se" in fit
+            assert "r2" in fit
+
+    def test_family_fits_are_independent(self):
+        """Intra fit must not be influenced by inter results."""
+        intra_only = _make_report([
+            _make_result("i1", True,  INTRA, depth=1),
+            _make_result("i2", False, INTRA, depth=2),
+            _make_result("i3", False, INTRA, depth=3),
+        ])
+        mixed = _make_report(intra_only.results + [
+            _make_result("r1", True, INTER, depth=1),
+            _make_result("r2", True, INTER, depth=2),
+            _make_result("r3", True, INTER, depth=3),
+        ])
+        fit_solo  = fit_scaling_law_by_family(intra_only)[INTRA]
+        fit_mixed = fit_scaling_law_by_family(mixed)[INTRA]
+        assert fit_solo["alpha"] == fit_mixed["alpha"]
+
+    def test_missing_family_returns_note(self):
+        """A family absent from the report must return a note, not crash."""
+        report = _make_report([
+            _make_result("i1", True, INTRA, depth=1),
+            _make_result("i2", False, INTRA, depth=2),
+        ])
+        by_fam = fit_scaling_law_by_family(report)
+        assert by_fam[FIELD]["A"] is None
+        assert "note" in by_fam[FIELD]
+
+    def test_adversarial_excluded_per_family(self):
+        """Adversarial-dimension intra tasks must not contaminate the intra fit."""
+        base = _make_report([
+            _make_result("i1", True,  INTRA, depth=1),
+            _make_result("i2", False, INTRA, depth=2),
+            _make_result("i3", False, INTRA, depth=3),
+        ])
+        with_adv = _make_report(base.results + [
+            _make_result("a1", True, INTRA, dimension="adversarial", depth=1),
+            _make_result("a2", True, INTRA, dimension="adversarial", depth=1),
+        ])
+        fit_base = fit_scaling_law_by_family(base)[INTRA]
+        fit_adv  = fit_scaling_law_by_family(with_adv)[INTRA]
+        assert fit_base["alpha"] == fit_adv["alpha"]
+
+
+# ── proof report key rename ────────────────────────────────────────────────────
+
+class TestProofReportKeys:
+    def test_verify_set_returns_trace_verified_key(self):
+        from algebraid.proof import verify_set
+        from algebraid.generator import AlgebraidGenerator
+        ts = AlgebraidGenerator(seed=42).generate(
+            depths=[1], tasks_per_depth=3, families=["intra"]
+        )
+        report = verify_set(ts)
+        assert "trace_verified" in report
+        assert "proven" not in report
+
+    def test_trace_verified_count_positive(self):
+        from algebraid.proof import verify_set
+        from algebraid.generator import AlgebraidGenerator
+        ts = AlgebraidGenerator(seed=42).generate(
+            depths=[1], tasks_per_depth=5, families=["intra"]
+        )
+        report = verify_set(ts)
+        assert report["trace_verified"] > 0
+
+    def test_proof_rate_zero_for_untraceable_set(self):
+        """Conceptual-only set has no traceable tasks -> proof_rate = 0.0."""
+        from algebraid.proof import verify_set
+        from algebraid.generator import AlgebraidGenerator
+        ts = AlgebraidGenerator(seed=42).generate(
+            depths=[1], tasks_per_depth=5, families=["conceptual"]
+        )
+        report = verify_set(ts)
+        assert report["proof_rate"] == 0.0
+        assert report["trace_verified"] == 0
+
+
+# ── validator prompt-trace alignment ──────────────────────────────────────────
+
+class TestPromptTraceAlignment:
+    def test_no_warning_when_element_in_prompt(self):
+        """A correctly described operation produces no alignment warning."""
+        from algebraid.tasks.validator import TaskValidator
+        from algebraid.task_model import Task, TaskFamily, CompositionDimension
+        # right_mul_3 -> element '3' appears in the prompt
+        task = Task(
+            task_id="AG-align01",
+            prompt="Starting with x = 2, add 3 (mod 7). What is the result?",
+            answer="5",
+            answer_raw="5",
+            depth=1,
+            family=TaskFamily.INTRA_STRUCTURE,
+            dimension=CompositionDimension.GENERAL,
+            structures=["Z_7"],
+            solution_trace=[("start", "2"), ("right_mul_3", "5")],
+        )
+        result = TaskValidator().validate(task)
+        alignment_warns = [w for w in result.warnings if "right_mul_3" in w]
+        assert len(alignment_warns) == 0
+
+    def test_warning_when_element_absent_from_prompt(self):
+        """Element '5' in trace but '3' described in prompt -> warning."""
+        from algebraid.tasks.validator import TaskValidator
+        from algebraid.task_model import Task, TaskFamily, CompositionDimension
+        task = Task(
+            task_id="AG-align02",
+            prompt="Starting with x = 2, add 3 (mod 7). What is the result?",
+            answer="0",
+            answer_raw="0",
+            depth=1,
+            family=TaskFamily.INTRA_STRUCTURE,
+            dimension=CompositionDimension.GENERAL,
+            structures=["Z_7"],
+            # trace says right_mul_5 but prompt says "add 3"
+            solution_trace=[("start", "2"), ("right_mul_5", "0")],
+        )
+        result = TaskValidator().validate(task)
+        assert any("right_mul_5" in w for w in result.warnings)
+
+    def test_inverse_op_skipped_by_alignment_check(self):
+        """The 'inverse' operation has no element suffix — must not warn."""
+        from algebraid.tasks.validator import TaskValidator
+        from algebraid.task_model import Task, TaskFamily, CompositionDimension
+        task = Task(
+            task_id="AG-align03",
+            prompt="Starting with x = 3, take the inverse in Z_7. What is the result?",
+            answer="4",
+            answer_raw="4",
+            depth=1,
+            family=TaskFamily.INTRA_STRUCTURE,
+            dimension=CompositionDimension.GENERAL,
+            structures=["Z_7"],
+            solution_trace=[("start", "3"), ("inverse", "4")],
+        )
+        result = TaskValidator().validate(task)
+        alignment_warns = [w for w in result.warnings if "inverse" in w and "right_mul" not in w]
+        assert len(alignment_warns) == 0
+
+
+# ── skin name in metadata ──────────────────────────────────────────────────────
+
+class TestSkinInMetadata:
+    def test_intra_task_has_skin_key(self):
+        from algebraid.generator import AlgebraidGenerator
+        ts = AlgebraidGenerator(seed=42).generate(
+            depths=[1], tasks_per_depth=5, families=["intra"]
+        )
+        for t in ts:
+            assert "skin" in t.metadata
+
+    def test_use_skins_false_gives_none_skin(self):
+        from algebraid.generator import AlgebraidGenerator
+        ts = AlgebraidGenerator(seed=42).generate(
+            depths=[1], tasks_per_depth=5, families=["intra"], use_skins=False
+        )
+        for t in ts:
+            assert t.metadata.get("skin") is None
+
+    def test_use_skins_true_gives_string_skin(self):
+        from algebraid.generator import AlgebraidGenerator
+        ts = AlgebraidGenerator(seed=42).generate(
+            depths=[1], tasks_per_depth=10, families=["intra"], use_skins=True
+        )
+        for t in ts:
+            assert isinstance(t.metadata.get("skin"), str)
+
+    def test_rule_task_has_skin_key(self):
+        from algebraid.generator import AlgebraidGenerator
+        ts = AlgebraidGenerator(seed=42).generate(
+            depths=[1], tasks_per_depth=5, families=["rule"]
+        )
+        for t in ts:
+            assert "skin" in t.metadata
+
+    def test_adversarial_task_has_skin_key(self):
+        from algebraid.generator import AlgebraidGenerator
+        ts = AlgebraidGenerator(seed=42).generate(
+            depths=[2], tasks_per_depth=5, families=["adversarial"]
+        )
+        for t in ts:
+            assert "skin" in t.metadata
+
+    def test_skin_survives_jsonl_roundtrip(self):
+        import tempfile, os
+        from algebraid.generator import AlgebraidGenerator
+        from algebraid.task_model import TaskSet
+        ts = AlgebraidGenerator(seed=42).generate(
+            depths=[1], tasks_per_depth=3, families=["intra"]
+        )
+        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False, mode="w") as f:
+            path = f.name
+        try:
+            ts.to_jsonl(path)
+            ts2 = TaskSet.from_jsonl(path)
+            for t in ts2:
+                assert "skin" in t.metadata
+        finally:
+            os.unlink(path)

@@ -64,6 +64,7 @@ class TaskValidator:
         self._check_answer(task, result)
         if task.solution_trace:
             self._check_trace(task, result)
+            self._check_prompt_trace_alignment(task, result)
         return result
 
     def validate_set(self, task_set: TaskSet) -> Dict[str, Any]:
@@ -169,6 +170,31 @@ class TaskValidator:
                 f"Trace length ({len(trace)}) differs from expected "
                 f"({expected_length} = depth {task.depth} + 1)."
             )
+
+    # -- 5. Prompt-trace alignment checks -----------------------------------
+
+    def _check_prompt_trace_alignment(self, task: Task, r: ValidationResult) -> None:
+        """Warn if a trace operation references an element absent from the prompt.
+
+        For operations of the form right_mul_{k}, left_mul_{k}, or conj_{k},
+        the element key ``k`` should appear literally in the prompt text.
+        Semantic skins may alias element names, so misses are warnings rather
+        than errors.  This check catches gross verbalizer bugs (e.g. wrong
+        element rendered in the prompt) that the algebraic proof engine cannot
+        detect since it only verifies trace consistency, not prompt fidelity.
+        """
+        assert task.solution_trace is not None  # caller guards this
+        for op_name, _ in task.solution_trace:
+            m = re.match(r'^(?:right_mul|left_mul|conj)_(.+)$', op_name)
+            if m:
+                key = m.group(1)
+                if key not in task.prompt:
+                    r.warn(
+                        f"Trace operation '{op_name}' references element '{key}' "
+                        "which does not appear literally in the prompt. "
+                        "If a semantic skin is applied, the skin may alias this "
+                        "element — verify the prompt correctly describes the operation."
+                    )
 
 
 # -- Convenience helpers -----------------------------------------------------

@@ -1,20 +1,23 @@
 """
 Error analysis suite for ALGEBRAID evaluation results.
 
-  fit_scaling_law()       Power-law decay fit on chain tasks: acc(d) ~= A * depth^(-alpha)
-  find_phase_transition() Steepest accuracy drop and first sub-50% depth (chain tasks only)
-  error_taxonomy()        Mechanistic failure-mode classification
-  hallucination_onset()   Depth at which refusal/nonsense rate rises (chain tasks only)
-  stability_breakdown()   Per-depth curve enriched with taxonomy + fitted values
-  run_analysis()          Consolidated report dict (all of the above)
-  print_analysis()        Human-readable console output
+  fit_scaling_law()           Pooled power-law fit across chain families
+  fit_scaling_law_by_family() Independent power-law fit per chain family
+  find_phase_transition()     Steepest accuracy drop and first sub-50% depth
+  error_taxonomy()            Mechanistic failure-mode classification
+  hallucination_onset()       Depth at which refusal/nonsense rate rises
+  stability_breakdown()       Per-depth curve enriched with taxonomy + fitted values
+  run_analysis()              Consolidated report dict (all of the above)
+  print_analysis()            Human-readable console output
 
-Depth-based analyses (scaling law, phase transition, hallucination onset, compositional
-ceiling) operate only on chain families (intra-structure, inter-structure, field
-arithmetic) where depth meaningfully corresponds to task difficulty. Conceptual queries
-(always depth=1, different character), rule induction (more examples -> easier, not
-harder), adversarial, and intermediate tasks are excluded from depth-scaling analyses
-but appear in all accuracy breakdowns.
+Depth-based analyses operate only on chain families (intra-structure, inter-structure,
+field arithmetic).  Conceptual, rule, adversarial, and intermediate tasks are excluded.
+
+Note on depth semantics: "depth" means different things across chain families —
+sequential chain length for intra, number of direct-product components for inter, and
+expression-tree height for field.  fit_scaling_law_by_family() fits each family
+independently to avoid conflating these.  The pooled fit_scaling_law() is provided as
+a coarse aggregate across all three families.
 """
 
 from __future__ import annotations
@@ -24,25 +27,13 @@ import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
-from .evaluator import EvalReport, EvalResult
+from .evaluator import EvalReport, EvalResult, CHAIN_FAMILIES, CHAIN_EXCLUDED_DIMENSIONS
 from .task_model import CompositionDimension
 
 
-# Families where depth meaningfully corresponds to task difficulty.
-# Excluded: conceptual (always depth=1, different character),
-#           rule (more examples -> easier, not harder),
-#           adversarial and intermediate (depth distorted by construction).
-_CHAIN_FAMILIES = {
-    "intra-structure composition",
-    "inter-structure composition",
-    "field arithmetic",
-}
-
-# Adversarial and intermediate tasks share the intra-structure family label
-# but have artificially constructed depths (adversarial: always 1-2;
-# intermediate: the query step k, not the full chain length).
-# They must be excluded from depth-scaling analyses by dimension.
-_CHAIN_EXCLUDED_DIMENSIONS = {"adversarial", "intermediate_state"}
+# Module-level aliases for readability in this file.
+_CHAIN_FAMILIES = CHAIN_FAMILIES
+_CHAIN_EXCLUDED_DIMENSIONS = CHAIN_EXCLUDED_DIMENSIONS
 
 
 def _chain_results(report: EvalReport) -> List[EvalResult]:
@@ -75,39 +66,16 @@ def _depth_stats_from_results(results: List[EvalResult]) -> Dict[int, Dict[str, 
 
 # -- 1. Error Scaling Law -----------------------------------------------------
 
-def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
+def _fit_power_law(depth_stats: Dict[int, Dict]) -> Dict[str, Any]:
     """
-    Fit a power-law decay to accuracy as a function of composition depth.
+    Core OLS power-law fit on a pre-computed depth_stats dict.
 
-        acc(d) ~= A * d^(-alpha)
+    Fits  acc(d) ~= A * d^(-alpha)  via OLS in log-log space.
 
-    Fit via ordinary least-squares in log-log space:
-
-        log(acc) = log(A) - alpha * log(d)
-
-    Operates on chain families only (intra-structure, inter-structure, field
-    arithmetic). Conceptual, rule, adversarial, and intermediate tasks are
-    excluded because their depth does not correspond to increasing difficulty
-    in the same monotonic way.
-
-    Returns
-    -------
-    A            Pre-factor  (model accuracy extrapolated to depth 1)
-    alpha        Decay exponent  (alpha > 0 -> accuracy falls with depth)
-    r2           Coefficient of determination
-    interpretation  Human-readable sentence
-    data         Per-depth {depth, accuracy, fitted} list for plotting
-    families     The families included in the fit
+    Returns a dict with keys: A, alpha, alpha_se, r2, interpretation, data,
+    and optionally a 'note' key for data-quality warnings.  On failure to fit
+    (too few points, zero variance) A and alpha are None.
     """
-    chain = _chain_results(report)
-    if not chain:
-        return {
-            "A": None, "alpha": None, "r2": None, "data": [],
-            "families": sorted(_CHAIN_FAMILIES),
-            "note": "No chain-family results found.",
-        }
-
-    depth_stats = _depth_stats_from_results(chain)
     depths = sorted(depth_stats.keys())
     accs = [depth_stats[d]["accuracy"] for d in depths]
 
@@ -115,8 +83,7 @@ def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
     pairs = [(d, a) for d, a in zip(depths, accs) if d > 0 and a > 0]
     if len(pairs) < 2:
         return {
-            "A": None, "alpha": None, "r2": None, "data": [],
-            "families": sorted(_CHAIN_FAMILIES),
+            "A": None, "alpha": None, "alpha_se": None, "r2": None, "data": [],
             "note": "Insufficient data for fit (need >= 2 depths with non-zero accuracy).",
         }
 
@@ -131,8 +98,7 @@ def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
 
     if ss_xx == 0:
         return {
-            "A": None, "alpha": None, "r2": None, "data": [],
-            "families": sorted(_CHAIN_FAMILIES),
+            "A": None, "alpha": None, "alpha_se": None, "r2": None, "data": [],
             "note": "Zero variance in depths; cannot fit.",
         }
 
@@ -144,29 +110,122 @@ def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
     ss_tot = sum((la - mean_la) ** 2 for la in log_a)
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
-    # Percentage accuracy drop when depth doubles: 1 - 2^(-alpha)
-    halving_drop = (1 - 2 ** (-alpha)) * 100
+    # Standard error of alpha (from OLS theory): se = sqrt(MSE / ss_xx)
+    alpha_se: Optional[float] = (
+        math.sqrt(ss_res / (n - 2) / ss_xx) if n > 2 else None
+    )
+
+    # Build interpretation based on alpha sign and R² quality.
+    if alpha <= 0:
+        interpretation = (
+            f"Accuracy does not decrease with depth "
+            f"(alpha={alpha:.3f}, R\u00b2={r2:.3f})."
+        )
+    else:
+        halving_drop = (1 - 2 ** (-alpha)) * 100
+        if r2 >= 0.95:
+            fit_quality = f"Strong fit (R\u00b2={r2:.3f})."
+        elif r2 >= 0.80:
+            fit_quality = f"Moderate fit (R\u00b2={r2:.3f}); interpret with caution."
+        else:
+            fit_quality = (
+                f"Weak fit (R\u00b2={r2:.3f}) \u2014 the power-law form may not "
+                "describe this data well."
+            )
+        interpretation = (
+            f"acc(d) \u2248 {A:.3f} \u00d7 d^(-{alpha:.3f}).  "
+            f"Each doubling of depth reduces accuracy by ~{halving_drop:.1f}%.  "
+            f"{fit_quality}"
+        )
 
     data = [
         {
             "depth": d,
             "accuracy": round(a, 4),
-            "fitted": round(min(1.0, A * d ** (-alpha)), 4),
+            "fitted": round(min(1.0, A * d ** (-alpha)), 4) if alpha > 0 else None,
         }
         for d, a in zip(depths, accs)
     ]
 
-    return {
+    result: Dict[str, Any] = {
         "A": round(A, 4),
         "alpha": round(alpha, 4),
+        "alpha_se": round(alpha_se, 4) if alpha_se is not None else None,
         "r2": round(r2, 4),
-        "interpretation": (
-            f"acc(d) ~= {A:.3f} * d^(-{alpha:.3f}).  "
-            f"Each doubling of depth reduces accuracy by ~{halving_drop:.1f}%."
-        ),
-        "families": sorted(_CHAIN_FAMILIES),
+        "interpretation": interpretation,
         "data": data,
     }
+    if n < 8:
+        result["note"] = (
+            f"Fit based on only {n} depth levels. For a reliable power-law "
+            "estimate consider using generate_productivity_suite (depths up to 20)."
+        )
+    return result
+
+
+def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
+    """
+    Fit a pooled power-law decay to accuracy across all chain families.
+
+        acc(d) ~= A * d^(-alpha)
+
+    Pools intra-structure, inter-structure, and field arithmetic results.
+    Note: depth semantics differ across these families (sequential chain
+    length vs. product dimensionality vs. expression-tree height).  Use
+    fit_scaling_law_by_family() for family-stratified fits.
+
+    Returns
+    -------
+    A              Pre-factor
+    alpha          Decay exponent (alpha > 0 -> accuracy falls with depth)
+    alpha_se       Standard error of alpha (None when < 3 data points)
+    r2             Coefficient of determination
+    interpretation Human-readable sentence with fit quality grade
+    data           Per-depth {depth, accuracy, fitted} list
+    families       The families pooled in this fit
+    note           Data-quality warning if < 8 depth levels
+    """
+    chain = _chain_results(report)
+    if not chain:
+        return {
+            "A": None, "alpha": None, "alpha_se": None, "r2": None, "data": [],
+            "families": sorted(_CHAIN_FAMILIES),
+            "note": "No chain-family results found.",
+        }
+
+    depth_stats = _depth_stats_from_results(chain)
+    result = _fit_power_law(depth_stats)
+    result["families"] = sorted(_CHAIN_FAMILIES)
+    return result
+
+
+def fit_scaling_law_by_family(report: EvalReport) -> Dict[str, Any]:
+    """
+    Fit an independent power-law for each chain family.
+
+    Returns {family_name: fit_dict} for intra-structure, inter-structure,
+    and field arithmetic separately.  Each fit_dict has the same keys as
+    fit_scaling_law() (minus 'families').
+
+    This is the preferred analysis when comparing depth-difficulty scaling
+    across families because each family has a distinct notion of 'depth'.
+    """
+    results: Dict[str, Any] = {}
+    for family in sorted(_CHAIN_FAMILIES):
+        family_results = [
+            r for r in report.results
+            if r.family == family
+            and r.dimension not in _CHAIN_EXCLUDED_DIMENSIONS
+        ]
+        if not family_results:
+            results[family] = {
+                "A": None, "alpha": None, "alpha_se": None, "r2": None,
+                "data": [], "note": "No results for this family.",
+            }
+            continue
+        depth_stats = _depth_stats_from_results(family_results)
+        results[family] = _fit_power_law(depth_stats)
+    return results
 
 
 # -- 2. Phase Transition ------------------------------------------------------
@@ -408,12 +467,13 @@ def stability_breakdown(report: EvalReport) -> List[Dict[str, Any]]:
 # -- 6. Consolidated report ---------------------------------------------------
 
 def run_analysis(report: EvalReport) -> Dict[str, Any]:
-    """Run all five analyses and return a single consolidated dict."""
+    """Run all analyses and return a single consolidated dict."""
     return {
         "model": report.model_name,
         "task_set": report.task_set_name,
         "overall_accuracy": round(report.accuracy_overall, 4),
         "scaling_law": fit_scaling_law(report),
+        "scaling_law_by_family": fit_scaling_law_by_family(report),
         "phase_transition": find_phase_transition(report),
         "error_taxonomy": error_taxonomy(report),
         "hallucination_onset": hallucination_onset(report),
@@ -433,13 +493,26 @@ def print_analysis(analysis: Dict[str, Any]) -> None:
 
     law = analysis["scaling_law"]
     if law.get("alpha") is not None:
-        print(f"\n  Error Scaling Law  (acc ~= A * depth^(-alpha)):")
+        se_str = f" ± {law['alpha_se']}" if law.get("alpha_se") is not None else ""
+        print(f"\n  Pooled Scaling Law  (acc \u2248 A \u00d7 depth^(-\u03b1), all chain families):")
         print(f"    A     = {law['A']}  (pre-factor)")
-        print(f"    alpha = {law['alpha']}  (decay exponent)")
-        print(f"    R^2   = {law['r2']}")
+        print(f"    \u03b1     = {law['alpha']}{se_str}  (decay exponent ± SE)")
+        print(f"    R\u00b2    = {law['r2']}")
         print(f"    {law['interpretation']}")
+        if law.get("note"):
+            print(f"    NOTE: {law['note']}")
     else:
-        print(f"\n  Error Scaling Law: {law.get('note', 'unavailable')}")
+        print(f"\n  Pooled Scaling Law: {law.get('note', 'unavailable')}")
+
+    by_fam = analysis.get("scaling_law_by_family", {})
+    if by_fam:
+        print(f"\n  Per-Family Scaling Laws:")
+        for fam, flaw in by_fam.items():
+            if flaw.get("alpha") is not None:
+                se_str = f" ± {flaw['alpha_se']}" if flaw.get("alpha_se") is not None else ""
+                print(f"    {fam:<30}  \u03b1={flaw['alpha']}{se_str}  R\u00b2={flaw['r2']}")
+            else:
+                print(f"    {fam:<30}  {flaw.get('note', 'no fit')}")
 
     pt = analysis["phase_transition"]
     if pt.get("critical_depth") is not None:

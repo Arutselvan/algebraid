@@ -8,6 +8,8 @@
 
 ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks built on five algebraic structures. Every answer is derived by algebraic construction; chain-computation answers (intra-structure, adversarial, intermediate) are additionally re-derived by an independent proof engine from the solution trace. Other families (inter-structure, conceptual, rule induction) are verified by construction rather than by trace. Tasks are seed-deterministic: the same seed always produces the same task set.
 
+The proof engine verifies **algebraic trace consistency** — it re-applies each named operation from first principles and checks every intermediate value. It does not re-read the prompt. A separate **prompt-trace alignment check** in the validator warns when a trace operation references an element that does not appear literally in the prompt (catches verbalizer bugs that the proof engine cannot detect).
+
 ## Key Properties
 
 | Property | Detail |
@@ -17,6 +19,7 @@ ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks buil
 | **Non-memorisable** | Unlimited procedural variation; no fixed test set |
 | **Reproducible** | Same seed -> same task set |
 | **Multi-dimensional** | 7 generator families (5 task family labels) x 7 compositional dimensions x 4 complexity metrics |
+| **Skin metadata** | Active skin name stored in task `metadata["skin"]` for downstream analysis |
 
 ## Install
 
@@ -151,12 +154,40 @@ Two task-specific metrics are available as standalone functions:
 
 ---
 
+## Scaling Law Analysis
+
+`run_analysis(report)` returns a pooled power-law fit `acc(d) ~ A * d^(-alpha)` across all chain families. **Depth semantics differ by family** — intra-structure depth is chain length, inter-structure depth is component count, field arithmetic depth is expression-tree height — so the pooled fit mixes incommensurable units.
+
+Use `fit_scaling_law_by_family(report)` for per-family independent fits, which avoids conflating these semantics. Each family result includes:
+
+| Key | Meaning |
+|---|---|
+| `alpha` | Decay exponent; larger = steeper drop with depth |
+| `alpha_se` | Standard error of the exponent estimate |
+| `r2` | R² of the log-log fit |
+| `interpretation` | "Strong" (R²≥0.95), "Moderate" (R²≥0.80), "Weak" (<0.80), or "Accuracy does not decrease..." (alpha≤0) |
+| `note` | Data-quality warning if fewer than 8 depth levels are available |
+
+## Proof Report Keys
+
+`verify_set(task_set)` returns a dict with the following keys:
+
+| Key | Meaning |
+|---|---|
+| `total` | Total tasks |
+| `trace_verified` | Tasks with traces that re-derive correctly from first principles |
+| `skipped` | Tasks without traces (conceptual, rule induction) — verified by construction |
+| `failed` | Tasks where the trace is algebraically inconsistent |
+| `proof_rate` | `trace_verified / (trace_verified + failed)` as a percentage |
+| `coverage` | `(trace_verified + skipped) / total` as a percentage |
+| `failures` | List of `{task_id, failed_step, message}` dicts |
+
 ## Python API
 
 ```python
 from algebraid import (
     AlgebraidGenerator, AlgebraidEvaluator, EvalReport,
-    TaskValidator, verify_set, run_analysis,
+    TaskValidator, verify_set, run_analysis, fit_scaling_law_by_family,
     split_by_depth, split_by_commutativity,
 )
 
@@ -169,13 +200,14 @@ task_set = gen.generate(
     families=["intra", "inter", "conceptual", "adversarial"],
 )
 
-# Validate
+# Validate (includes prompt-trace alignment check)
 val_report = TaskValidator().validate_set(task_set)
 print(f"{val_report['passed']}/{val_report['total']} passed")
 
-# Independently verify answers
+# Independently verify trace-based answers
 proof = verify_set(task_set)
-print(f"Proof rate: {proof['proof_rate']}%")
+print(f"Trace-verified: {proof['trace_verified']}  "
+      f"proof rate: {proof['proof_rate']}%")
 
 # Evaluate (given a predictions dict)
 predictions = {"AG-abc123": "5"}
@@ -183,8 +215,16 @@ evaluator = AlgebraidEvaluator()
 report = evaluator.evaluate(task_set, predictions, model_name="my-model")
 report.print_summary()
 
-# Error analysis
+# Error analysis (pooled scaling law + per-family breakdown)
 analysis = run_analysis(report)
+
+# Per-family scaling law (recommended: avoids mixing incompatible depth semantics)
+# intra: depth = chain length; inter: depth = #components; field: depth = tree height
+by_family = fit_scaling_law_by_family(report)
+for fam, fit in by_family.items():
+    if fit["alpha"] is not None:
+        print(f"{fam}: alpha={fit['alpha']:.2f} ±{fit['alpha_se']:.2f}  "
+              f"R²={fit['r2']:.3f}  ({fit['interpretation']})")
 
 # Generalisation splits
 train, test = split_by_depth(task_set, train_max_depth=2)
@@ -210,7 +250,7 @@ src/algebraid/
     generator.py        Procedural task generation (7 families)
     evaluator.py        AlgebraidEvaluator, EvalReport
     proof.py            Independent algebraic verifier
-    analysis.py         Scaling laws, phase transitions, error taxonomy
+    analysis.py         Scaling laws, phase transitions, error taxonomy; per-family fits via fit_scaling_law_by_family()
     complexity.py       Algebraic complexity metrics
     splits.py           Train/test split strategies
     skins.py            12 semantic skins

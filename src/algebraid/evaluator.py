@@ -15,6 +15,19 @@ from .tasks.verifier import check_answer
 from .complexity import compute_complexity, AlgebraicComplexity
 
 
+# Families where depth meaningfully corresponds to task difficulty.
+# Shared with analysis.py — define once here to prevent drift.
+CHAIN_FAMILIES: frozenset = frozenset({
+    "intra-structure composition",
+    "inter-structure composition",
+    "field arithmetic",
+})
+
+# Adversarial and intermediate tasks share the intra-structure family label
+# but have artificially constructed depths; exclude them from depth-scaling analyses.
+CHAIN_EXCLUDED_DIMENSIONS: frozenset = frozenset({"adversarial", "intermediate_state"})
+
+
 @dataclass
 class EvalResult:
     """Result of evaluating a single task."""
@@ -295,15 +308,9 @@ class AlgebraidEvaluator:
         # tasks do not distort the depth-accuracy relationship.
         # Adversarial and intermediate share the intra-structure family label
         # so they must also be excluded by dimension.
-        _CHAIN_FAMILIES = {
-            "intra-structure composition",
-            "inter-structure composition",
-            "field arithmetic",
-        }
-        _CHAIN_EXCLUDED_DIMS = {"adversarial", "intermediate_state"}
         chain_depth_stats: Dict = defaultdict(lambda: {"correct": 0, "total": 0})
         for r in results:
-            if r.family in _CHAIN_FAMILIES and r.dimension not in _CHAIN_EXCLUDED_DIMS:
+            if r.family in CHAIN_FAMILIES and r.dimension not in CHAIN_EXCLUDED_DIMENSIONS:
                 chain_depth_stats[r.depth]["total"] += 1
                 if r.correct:
                     chain_depth_stats[r.depth]["correct"] += 1

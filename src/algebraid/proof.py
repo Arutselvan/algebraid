@@ -237,18 +237,18 @@ def verify_task(task: Task) -> ProofResult:
 def verify_set(task_set: TaskSet) -> Dict[str, Any]:
     """Verify every task in a TaskSet and return a proof report dict."""
     results: List[ProofResult] = [verify_task(t) for t in task_set]
-    proven = [r for r in results if r.verified and r.steps_checked > 0]
+    trace_verified = [r for r in results if r.verified and r.steps_checked > 0]
     skipped = [r for r in results if r.verified and r.steps_checked == 0]
     failed = [r for r in results if not r.verified]
-    total_traceable = len(proven) + len(failed)
+    total_traceable = len(trace_verified) + len(failed)
 
     return {
         "total": len(results),
-        "proven": len(proven),
+        "trace_verified": len(trace_verified),
         "skipped": len(skipped),
         "failed": len(failed),
-        "proof_rate": round(len(proven) / total_traceable * 100, 1) if total_traceable else 100.0,
-        "coverage": round((len(proven) + len(skipped)) / len(results) * 100, 1) if results else 0.0,
+        "proof_rate": round(len(trace_verified) / total_traceable * 100, 1) if total_traceable else 0.0,
+        "coverage": round((len(trace_verified) + len(skipped)) / len(results) * 100, 1) if results else 0.0,
         "failures": [
             {"task_id": r.task_id, "failed_step": r.failed_step, "message": r.error_message}
             for r in failed
@@ -263,11 +263,11 @@ def print_proof_report(report: Dict[str, Any]) -> None:
     print("  ALGEBRAID Proof Report")
     print(sep)
     print(f"  Total tasks    : {report['total']}")
-    print(f"  Proven correct : {report['proven']}  (algebraically re-derived)")
+    print(f"  Trace-verified : {report['trace_verified']}  (trace algebraically re-derived)")
     print(f"  Skipped        : {report['skipped']}  (no trace: conceptual/rule tasks)")
     print(f"  Failed         : {report['failed']}")
     print(f"  Proof rate     : {report['proof_rate']}%  (of traceable tasks)")
-    print(f"  Coverage       : {report['coverage']}%  (proven + skipped / total)")
+    print(f"  Coverage       : {report['coverage']}%  (verified + skipped / total)")
     if report["failures"]:
         print(f"\n  Proof failures (first 10):")
         for f in report["failures"][:10]:
