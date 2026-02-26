@@ -217,6 +217,76 @@ RULE_TEMPLATES: List[Dict[str, str]] = [
     },
 ]
 
+# ── Conceptual query templates ───────────────────────────────────────────────
+# Keyed by query_subtype; each has 3+ surface-form variants.
+
+CONCEPTUAL_TEMPLATES: Dict[str, List[str]] = {
+    "identity": [
+        "In {name} {short_desc}, what is the identity element under {sym}? Give only the answer.",
+        "What element e in {name} {short_desc} satisfies e {sym} x = x {sym} e = x for every element x? State only the answer.",
+        "Name the identity element of {name} {short_desc}. Give only the answer.",
+    ],
+    "element_order": [
+        "In {name} {short_desc}, what is the order of the element {x}?\n(The order is the smallest positive integer k such that applying the operation k times to {x} returns the identity.)\nGive only the integer answer.",
+        "How many times must you apply {sym} to {x} with itself (i.e. compute {x}, {x}{sym}{x}, {x}{sym}{x}{sym}{x}, …) before you first reach the identity in {name} {short_desc}? Give only the count.",
+        "Find ord({x}) in {name} {short_desc}. Give only the integer answer.",
+    ],
+    "commutativity_check": [
+        "In {name} {short_desc}, does {a} {sym} {b} equal {b} {sym} {a}? Answer Yes or No.",
+        "Working in {name} {short_desc}: is the operation {sym} commutative for the specific pair ({a}, {b})? Answer Yes or No.",
+        "Does the order of applying {sym} matter for {a} and {b} in {name} {short_desc}? That is, is {a} {sym} {b} = {b} {sym} {a}? Answer Yes or No.",
+    ],
+    "structure_order": [
+        "How many elements does {name} {short_desc} contain? Give only the integer answer.",
+        "What is |{name}|, the order of the group {name} {short_desc}? Give only the integer.",
+        "State the order (number of elements) of the group {name} {short_desc}. Give only the integer.",
+    ],
+    "is_abelian": [
+        "Is {name} {short_desc} an abelian (commutative) group? Answer Yes or No.",
+        "Does every pair of elements in {name} {short_desc} satisfy a {sym} b = b {sym} a? Answer Yes or No.",
+        "Is the group {name} {short_desc} commutative? Answer Yes or No.",
+    ],
+    "inverse_of": [
+        "In {name} {short_desc}, what is the inverse of {x} under {sym}? Give only the answer.",
+        "Find {x}^(-1) in {name} {short_desc}. Give only the answer.",
+        "Which element y in {name} {short_desc} satisfies {x} {sym} y = e, where e is the identity? Give only the answer.",
+    ],
+    "is_generator": [
+        "Is {x} a generator of {name} {short_desc}? (A generator is an element whose repeated application reaches every element.) Answer Yes or No.",
+        "Can every element of {name} {short_desc} be expressed as a multiple (repeated application) of {x}? Answer Yes or No.",
+        "Does {x} generate the entire group {name} {short_desc}? Answer Yes or No.",
+    ],
+}
+
+# ── Intermediate-state templates ─────────────────────────────────────────────
+
+INTERMEDIATE_TEMPLATES: List[str] = [
+    (
+        "In {name} {short_desc}, starting with x = {x}, apply the following {total} operations in order:\n"
+        "{steps}\n"
+        "What is the value immediately after step {k}? (Do not continue past step {k}.)\n"
+        "Give only the answer."
+    ),
+    (
+        "Working in {name} {short_desc} with initial value {x}:\n"
+        "{steps}\n"
+        "Report the intermediate result right after step {k} has been applied. Give only the answer."
+    ),
+    (
+        "Consider this computation in {name} {short_desc}. Start: {x}.\n"
+        "{steps}\n"
+        "What value does the element hold after exactly {k} of these {total} operations? Give only the answer."
+    ),
+]
+
+# ── Verify-format templates ───────────────────────────────────────────────────
+
+VERIFY_TEMPLATES: List[str] = [
+    "In {name} {short_desc}: is it true that {claim}? Answer Yes or No.",
+    "Working in {name} {short_desc} — does the following hold? {claim}\nAnswer Yes or No.",
+    "True or False (in {name} {short_desc}): {claim}\nAnswer Yes or No.",
+]
+
 
 class Verbalizer:
     """
@@ -256,6 +326,9 @@ class Verbalizer:
             intro: str = frame["intro"]
             if n is not None:
                 intro = intro.replace("{n}", str(n)).replace("{n_minus_1}", str(n - 1))
+            elif "{n}" in intro:
+                # Frame requires {n} but structure has no such attribute — skip frame
+                return lines
             return [intro, ""] + lines
         return lines
 
@@ -414,6 +487,100 @@ class Verbalizer:
         lines.append(tmpl["question"].format(test=test_str))
 
         return self._clean("\n".join(lines))
+
+    def verbalize_conceptual(
+        self,
+        structure: AlgebraicStructure,
+        query_subtype: str,
+        x: Any = None,
+        a: Any = None,
+        b: Any = None,
+        skin: Optional[SemanticSkin] = None,
+    ) -> str:
+        """Generate a diverse prompt for a conceptual query task."""
+        templates = CONCEPTUAL_TEMPLATES.get(query_subtype, CONCEPTUAL_TEMPLATES["identity"])
+        tmpl = self._rng.choice(templates)
+
+        structure_name = skin.structure_name(structure) if skin else structure.name
+        sym = structure.operation_symbol()
+
+        x_str = structure.element_to_str(x) if x is not None else "x"
+        a_str = structure.element_to_str(a) if a is not None else "a"
+        b_str = structure.element_to_str(b) if b is not None else "b"
+
+        prompt = tmpl.format(
+            name=structure_name,
+            short_desc=structure.short_description,
+            sym=sym,
+            x=x_str,
+            a=a_str,
+            b=b_str,
+        )
+        return self._clean(prompt)
+
+    def verbalize_intermediate_state(
+        self,
+        structure: AlgebraicStructure,
+        composed_func: Any,
+        x: Any,
+        query_step: int,
+        skin: Optional[SemanticSkin] = None,
+    ) -> str:
+        """Generate a prompt asking for the value at a specific step in a chain."""
+        tmpl = self._rng.choice(INTERMEDIATE_TEMPLATES)
+
+        structure_name = skin.structure_name(structure) if skin else structure.name
+        x_str = skin.element_name(x, structure) if skin else structure.element_to_str(x)
+        total = len(composed_func.operations)
+
+        if skin:
+            op_descs = [
+                skin.op_description(op.name, op.fixed_args, structure)
+                for op in composed_func.operations
+            ]
+        else:
+            op_descs = [op.description for op in composed_func.operations]
+
+        steps = "\n".join(f"Step {i + 1}: {desc}." for i, desc in enumerate(op_descs))
+
+        prompt = tmpl.format(
+            name=structure_name,
+            short_desc=structure.short_description,
+            x=x_str,
+            total=total,
+            steps=steps,
+            k=query_step,
+        )
+        return self._clean(prompt)
+
+    def verbalize_verify(
+        self,
+        structure: AlgebraicStructure,
+        claim_str: str,
+        skin: Optional[SemanticSkin] = None,
+    ) -> str:
+        """Generate a Yes/No verification prompt around a given claim string."""
+        tmpl = self._rng.choice(VERIFY_TEMPLATES)
+        structure_name = skin.structure_name(structure) if skin else structure.name
+
+        prompt = tmpl.format(
+            name=structure_name,
+            short_desc=structure.short_description,
+            claim=claim_str,
+        )
+        return self._clean(prompt)
+
+    def verbalize_multiple_choice(
+        self,
+        base_prompt: str,
+        choices: Dict[str, str],
+    ) -> str:
+        """Append A/B/C/D choices to an existing prompt and return the modified prompt."""
+        choice_lines = "\n".join(
+            f"({letter.upper()}) {value}"
+            for letter, value in sorted(choices.items())
+        )
+        return self._clean(base_prompt.rstrip() + "\n\n" + choice_lines + "\n\nSelect one letter.")
 
     def relabel_elements(
         self,

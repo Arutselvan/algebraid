@@ -35,6 +35,8 @@ class AlgebraicComplexity(NamedTuple):
 
 def _parse_order(s_name: str) -> int:
     """Parse the group order from a structure name string."""
+    if s_name == "Q_8":
+        return 8
     if m := re.match(r"Z_(\d+)", s_name):
         return int(m.group(1))
     if m := re.match(r"S_(\d+)", s_name):
@@ -166,3 +168,50 @@ def compute_complexity(task: Task) -> AlgebraicComplexity:
         orbit_complexity=compute_orbit_complexity(task),
         structural_interference=compute_structural_interference(task),
     )
+
+
+# ── Extended metrics for new task dimensions ─────────────────────────────────
+# These are standalone functions that return 0.0 for non-applicable tasks,
+# preserving full backward compatibility with AlgebraicComplexity.
+
+_CONCEPTUAL_DEPTH_WEIGHTS: Dict[str, float] = {
+    "identity": 0.1,
+    "structure_order": 0.2,
+    "inverse_of": 0.3,
+    "is_abelian": 0.3,
+    "commutativity_check": 0.5,
+    "is_generator": 0.6,
+    "element_order": 0.7,
+}
+
+_ADVERSARIAL_STRENGTH_WEIGHTS: Dict[str, float] = {
+    "self_cancelling": 0.3,
+    "double_inverse": 0.5,
+    "identity_bait": 0.6,
+    "commutativity_trap": 0.8,
+}
+
+
+def compute_conceptual_depth(task: Task) -> float:
+    """Conceptual reasoning difficulty for conceptual query tasks (0.0 for others).
+
+    Scales from 0.1 (trivial lookup: identity element) to 0.7 (requires iterative
+    computation: element order). Returns 0.0 for all non-conceptual families.
+    """
+    if task.family.value != "conceptual query":
+        return 0.0
+    subtype = (task.metadata or {}).get("query_subtype", "")
+    return _CONCEPTUAL_DEPTH_WEIGHTS.get(subtype, 0.4)
+
+
+def compute_adversarial_strength(task: Task) -> float:
+    """Adversarial difficulty score (0.0 for non-adversarial tasks).
+
+    Measures how strongly the task is designed to elicit a specific wrong answer.
+    Scales from 0.3 (transparent self-cancellation) to 0.8 (non-commutativity trap).
+    Returns 0.0 for tasks without an adversarial_type metadata field.
+    """
+    adv_type = (task.metadata or {}).get("adversarial_type")
+    if adv_type is None:
+        return 0.0
+    return _ADVERSARIAL_STRENGTH_WEIGHTS.get(adv_type, 0.5)

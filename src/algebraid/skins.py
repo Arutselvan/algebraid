@@ -429,6 +429,87 @@ class ModularArithmeticSkin(SemanticSkin):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Quaternion-group skins  (Q_8 — multiplicative)
+# Elements indexed 0–7: "1", "-1", "i", "-i", "j", "-j", "k", "-k"
+# ═══════════════════════════════════════════════════════════════════════════
+
+_Q8_ALGEBRA_NAMES = ["1", "-1", "i", "-i", "j", "-j", "k", "-k"]
+
+_Q8_ROTATION_NAMES = [
+    "identity rotation",
+    "full flip",
+    "x-axis rotation",
+    "x-axis rotation inverse",
+    "y-axis rotation",
+    "y-axis rotation inverse",
+    "z-axis rotation",
+    "z-axis rotation inverse",
+]
+
+
+class QuaternionAlgebraSkin(SemanticSkin):
+    """Q_8 presented in standard quaternion algebra notation."""
+
+    @property
+    def name(self) -> str:
+        return "Quaternion Algebra"
+
+    def structure_name(self, structure) -> str:
+        return "the quaternion group Q_8"
+
+    def element_name(self, element, structure) -> str:
+        return _Q8_ALGEBRA_NAMES[element]
+
+    def op_description(self, op_name, fixed_args, structure) -> str:
+        if op_name == "inverse":
+            return "take the quaternion inverse"
+        if "left_mul" in op_name and fixed_args:
+            k = fixed_args[0]
+            return f"left-multiply by {_Q8_ALGEBRA_NAMES[k]}"
+        if "right_mul" in op_name and fixed_args:
+            k = fixed_args[0]
+            return f"right-multiply by {_Q8_ALGEBRA_NAMES[k]}"
+        if "conj" in op_name and fixed_args:
+            k = fixed_args[0]
+            return f"conjugate by {_Q8_ALGEBRA_NAMES[k]} (compute {_Q8_ALGEBRA_NAMES[k]} * x * {_Q8_ALGEBRA_NAMES[k]}^(-1))"
+        if "power" in op_name and fixed_args:
+            k = fixed_args[0]
+            return f"raise to the power {k}"
+        return "apply a quaternion operation"
+
+
+class QuaternionRotationSkin(SemanticSkin):
+    """Q_8 presented as 3D rotation states in robotics/graphics."""
+
+    @property
+    def name(self) -> str:
+        return "Quaternion Rotations"
+
+    def structure_name(self, structure) -> str:
+        return "a 3D rotation system with 8 states"
+
+    def element_name(self, element, structure) -> str:
+        return _Q8_ROTATION_NAMES[element]
+
+    def op_description(self, op_name, fixed_args, structure) -> str:
+        if op_name == "inverse":
+            return "reverse the rotation (apply inverse)"
+        if "left_mul" in op_name and fixed_args:
+            k = fixed_args[0]
+            return f"compose with {_Q8_ROTATION_NAMES[k]} on the left"
+        if "right_mul" in op_name and fixed_args:
+            k = fixed_args[0]
+            return f"compose with {_Q8_ROTATION_NAMES[k]} on the right"
+        if "conj" in op_name and fixed_args:
+            k = fixed_args[0]
+            return f"conjugate the rotation by {_Q8_ROTATION_NAMES[k]}"
+        if "power" in op_name and fixed_args:
+            k = fixed_args[0]
+            return f"apply the rotation {k} times in succession"
+        return "apply a rotation operation"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Registry
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -450,5 +531,9 @@ SKIN_REGISTRY: Dict[str, List[SemanticSkin]] = {
     "FiniteField": [
         SecretCodesSkin(),
         ModularArithmeticSkin(),
+    ],
+    "QuaternionGroup": [
+        QuaternionAlgebraSkin(),
+        QuaternionRotationSkin(),
     ],
 }
