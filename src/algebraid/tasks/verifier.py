@@ -85,6 +85,17 @@ def extract_answer(response: str) -> str:
     if boxed_match:
         return normalize_answer(boxed_match.group(1))
 
+    # Check for "Final Answer: X" (explicit format hint from prompt)
+    final_matches = re.findall(r'final\s+answer\s*:\s*(.+)', text, re.IGNORECASE)
+    if final_matches:
+        candidate = final_matches[-1].strip()
+        if candidate.lower() in ("yes", "no", "true", "false"):
+            return "yes" if candidate.lower() in ("yes", "true") else "no"
+        mc = _extract_multiple_choice(candidate.lower())
+        if mc:
+            return mc
+        return normalize_answer(candidate)
+
     # Check for binary Yes/No answers before other patterns
     binary = _extract_binary_answer(text.lower())
     if binary is not None:

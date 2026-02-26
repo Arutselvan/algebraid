@@ -26,11 +26,12 @@ class DirectProduct(AlgebraicStructure):
 
     @property
     def description(self) -> str:
+        sym = self.operation_symbol()
         return (
             f"The direct product of {self.G.name} and {self.H.name}. "
             f"Elements are pairs (a, b) where a in {self.G.name} and b in {self.H.name}. "
             f"The operation is applied component-wise: "
-            f"(a1, b1) {self.G.operation_symbol()} (a2, b2) = "
+            f"(a1, b1) {sym} (a2, b2) = "
             f"(a1 {self.G.operation_symbol()} a2, b1 {self.H.operation_symbol()} b2)."
         )
 
@@ -59,7 +60,11 @@ class DirectProduct(AlgebraicStructure):
         return f"({self.G.element_to_str(a[0])}, {self.H.element_to_str(a[1])})"
 
     def operation_symbol(self) -> str:
-        return "."
+        # Use the component symbol when both components agree (the common case:
+        # Z_m x Z_n both use '+').  Fall back to '.' only when they differ.
+        g_sym = self.G.operation_symbol()
+        h_sym = self.H.operation_symbol()
+        return g_sym if g_sym == h_sym else "."
 
     def is_commutative(self) -> bool:
         return self.G.is_commutative() and self.H.is_commutative()

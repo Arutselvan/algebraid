@@ -205,3 +205,31 @@ class TestDirectProduct:
         GH = DirectProduct(G, H)
         GHK = DirectProduct(GH, K)
         assert GHK.order() == 30  # 2*3*5
+
+    def test_operation_symbol_matches_components_when_same(self):
+        """Z_m x Z_n: both use '+', so DirectProduct must also return '+'."""
+        GH = DirectProduct(CyclicGroup(3), CyclicGroup(4))
+        assert GH.operation_symbol() == "+"
+
+    def test_operation_symbol_falls_back_when_different(self):
+        """When G uses '+' and H uses '*' the product must use '.'."""
+        G = CyclicGroup(3)        # symbol '+'
+        H = SymmetricGroup(3)     # symbol '*'
+        GH = DirectProduct(G, H)
+        assert GH.operation_symbol() == "."
+
+    def test_description_uses_operation_symbol(self):
+        """The outer pair symbol in description must equal operation_symbol()."""
+        GH = DirectProduct(CyclicGroup(3), CyclicGroup(4))
+        sym = GH.operation_symbol()
+        desc = GH.description
+        # The description contains a line like "(a1, b1) + (a2, b2) = ..."
+        assert f") {sym} (" in desc, (
+            f"description uses a different outer symbol than operation_symbol()={sym!r}:\n{desc}"
+        )
+
+    def test_description_symbol_not_period_for_cyclic_product(self):
+        """Cyclic x Cyclic: description must NOT use '.' as the outer op symbol."""
+        GH = DirectProduct(CyclicGroup(5), CyclicGroup(6))
+        # '.' would indicate a bug where operation_symbol() hardcoded '.'
+        assert ") . (" not in GH.description

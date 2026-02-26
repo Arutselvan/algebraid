@@ -10,7 +10,7 @@ from algebraid.tasks.verbalizer import (
     VERIFY_TEMPLATES, INTRA_TEMPLATES, RULE_TEMPLATES,
 )
 from algebraid.primitives import CyclicGroup, SymmetricGroup, QuaternionGroup
-from algebraid.composers import make_standard_operations, ComposedFunction
+from algebraid.composers import make_standard_operations, ComposedFunction, DirectProduct
 
 
 # ── Template pool integrity ───────────────────────────────────────────────────
@@ -82,6 +82,41 @@ class TestVerbalizeIntra:
         x = z7.random_element(rng)
         prompt = verbalizer.verbalize_intra(z7, chain, x, skin=skin)
         assert isinstance(prompt, str) and len(prompt) > 20
+
+    def test_skin_suppresses_context_frame(self, z7, rng):
+        """A skinned prompt must never contain a context-frame overlay.
+
+        Context frames like "You are designing a cipher" are incoherent when
+        the skin already provides its own narrative (e.g. seating arrangements).
+        """
+        from algebraid.skins import SKIN_REGISTRY
+        from algebraid.tasks.verbalizer import CONTEXT_FRAMES
+        context_intros = {v["intro"].split(".")[0].lower() for v in CONTEXT_FRAMES.values()}
+        ops = make_standard_operations(z7, rng)
+        chain = ComposedFunction([ops[0], ops[1]], z7)
+        x = z7.random_element(rng)
+        for skin in SKIN_REGISTRY["CyclicGroup"]:
+            # Force a context frame via context_frame= to maximise test pressure
+            for frame_key in list(CONTEXT_FRAMES.keys()):
+                v = Verbalizer(seed=0, context_frame=frame_key)
+                prompt = v.verbalize_intra(z7, chain, x, skin=skin)
+                intro_fragment = CONTEXT_FRAMES[frame_key]["intro"].split(".")[0].lower()
+                # The context frame intro must NOT appear in the skinned prompt
+                assert intro_fragment not in prompt.lower(), (
+                    f"Context frame '{frame_key}' bled into skinned prompt for "
+                    f"skin '{skin.name}': found '{intro_fragment}' in prompt"
+                )
+
+    def test_no_skin_allows_context_frame(self, z7, rng):
+        """Without a skin, the context frame MUST be applied (when forced)."""
+        from algebraid.tasks.verbalizer import CONTEXT_FRAMES
+        ops = make_standard_operations(z7, rng)
+        chain = ComposedFunction([ops[0]], z7)
+        x = z7.random_element(rng)
+        # Use a frame that doesn't require {n} substitution
+        v = Verbalizer(seed=0, context_frame="pure_math")
+        prompt = v.verbalize_intra(z7, chain, x, skin=None)
+        assert "Consider the following mathematical problem" in prompt
 
     def test_q8_verbalization(self, verbalizer, q8, rng):
         ops = make_standard_operations(q8, rng)
@@ -217,6 +252,70 @@ class TestVerbalizeRule:
         examples = [(0, 2), (1, 3)]
         prompt = verbalizer.verbalize_rule(z7, examples, test_input=4)
         assert "0" in prompt and "2" in prompt
+
+
+# ── verbalize_inter ───────────────────────────────────────────────────────────
+
+class TestVerbalizeInter:
+    @pytest.fixture
+    def z3xz4(self):
+        return DirectProduct(CyclicGroup(3), CyclicGroup(4))
+
+    def test_returns_nonempty_string(self, verbalizer, z3xz4):
+        a = (1, 2)
+        b = (2, 3)
+        prompt = verbalizer.verbalize_inter(z3xz4, a, b, op_type="op")
+        assert isinstance(prompt, str) and len(prompt) > 20
+
+    def test_no_unresolved_placeholders(self, verbalizer, z3xz4):
+        import re
+        for op_type in ["op", "inverse", "op_then_inverse"]:
+            prompt = verbalizer.verbalize_inter(z3xz4, (1, 2), (2, 3), op_type=op_type)
+            assert not re.search(r'\{[a-z_]+\}', prompt), (
+                f"Unresolved placeholder in {op_type} prompt: {prompt}"
+            )
+
+    def test_question_symbol_matches_description_symbol(self, verbalizer, z3xz4):
+        """The operator used in the question must match the operator defined in the header.
+
+        This is the regression for the DirectProduct symbol mixing bug:
+        description defined '+', but the question used '*' or '.'.
+        """
+        sym = z3xz4.operation_symbol()  # should be '+'
+        desc = z3xz4.description       # should also use '+'
+
+        # Verify that the description itself is consistent first
+        assert f") {sym} (" in desc, (
+            f"description symbol mismatch: op_sym={sym!r}, desc={desc!r}"
+        )
+
+        # Generate prompts for all three op_types and verify no foreign symbol appears
+        for op_type in ["op", "op_then_inverse"]:
+            prompt = verbalizer.verbalize_inter(z3xz4, (1, 2), (2, 3), op_type=op_type)
+            # The prompt contains the full description (via {desc}) and the question.
+            # Neither '.' nor '*' should appear in the question line when sym is '+'.
+            # We look for the question-specific fragment after the empty line.
+            lines = prompt.split("\n")
+            question_lines = [l for l in lines if any(
+                marker in l for marker in ["Compute", "(1, 2)", "(2, 3)"]
+            )]
+            for qline in question_lines:
+                assert "*" not in qline, (
+                    f"op_type={op_type}: found '*' in question line when sym='{sym}': {qline!r}"
+                )
+                assert "· " not in qline, (
+                    f"op_type={op_type}: found '·' in question line when sym='{sym}': {qline!r}"
+                )
+
+    def test_cyclic_product_uses_plus_not_dot(self, verbalizer, z3xz4):
+        """Z_m x Z_n prompts must not use '.' as the outer operator anywhere."""
+        for op_type in ["op", "op_then_inverse"]:
+            prompt = verbalizer.verbalize_inter(z3xz4, (1, 2), (2, 3), op_type=op_type)
+            # '. ' (dot-space) in a math context signals the wrong operator
+            # Exclude the '...' ellipsis in natural text — look for paired dot like ') . ('
+            assert ") . (" not in prompt, (
+                f"op_type={op_type}: found ') . (' in cyclic product prompt:\n{prompt}"
+            )
 
 
 # ── Diversity: different calls produce different prompts ─────────────────────

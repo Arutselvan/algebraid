@@ -178,12 +178,15 @@ class TaskValidator:
 
         For operations of the form right_mul_{k}, left_mul_{k}, or conj_{k},
         the element key ``k`` should appear literally in the prompt text.
-        Semantic skins may alias element names, so misses are warnings rather
-        than errors.  This check catches gross verbalizer bugs (e.g. wrong
-        element rendered in the prompt) that the algebraic proof engine cannot
-        detect since it only verifies trace consistency, not prompt fidelity.
+        When a semantic skin is applied the element names are aliased, so this
+        check is skipped entirely for skinned tasks (the skin is responsible for
+        correct verbalization; the algebraic proof engine verifies trace
+        consistency independently).
         """
         assert task.solution_trace is not None  # caller guards this
+        # Skin was applied — element names are aliased, literal check is meaningless.
+        if task.metadata.get("skin") is not None:
+            return
         for op_name, _ in task.solution_trace:
             m = re.match(r'^(?:right_mul|left_mul|conj)_(.+)$', op_name)
             if m:
@@ -191,9 +194,7 @@ class TaskValidator:
                 if key not in task.prompt:
                     r.warn(
                         f"Trace operation '{op_name}' references element '{key}' "
-                        "which does not appear literally in the prompt. "
-                        "If a semantic skin is applied, the skin may alias this "
-                        "element — verify the prompt correctly describes the operation."
+                        "which does not appear literally in the prompt."
                     )
 
 

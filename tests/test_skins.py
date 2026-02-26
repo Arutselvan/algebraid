@@ -231,10 +231,21 @@ class TestDeckOfCardsSkin:
         desc = self.skin.op_description("inverse", (), self.s3)
         assert "shuffle" in desc.lower() or "inverse" in desc.lower()
 
-    def test_mul_op_with_tuple(self):
+    def test_right_mul_op_mentions_right(self):
         perm = (2, 1, 3)
-        desc = self.skin.op_description("right_mul", (perm,), self.s3)
-        assert "Card" in desc or "shuffle" in desc.lower()
+        desc = self.skin.op_description("right_mul_2", (perm,), self.s3)
+        assert "right" in desc.lower()
+
+    def test_left_mul_op_mentions_left(self):
+        perm = (2, 1, 3)
+        desc = self.skin.op_description("left_mul_2", (perm,), self.s3)
+        assert "left" in desc.lower()
+
+    def test_left_and_right_mul_descriptions_differ(self):
+        perm = (2, 1, 3)
+        left_desc = self.skin.op_description("left_mul_2", (perm,), self.s3)
+        right_desc = self.skin.op_description("right_mul_2", (perm,), self.s3)
+        assert left_desc != right_desc
 
     def test_power_op(self):
         desc = self.skin.op_description("power_2", (2,), self.s3)
@@ -263,6 +274,22 @@ class TestSeatingSkin:
         desc = self.skin.op_description("inverse", (), self.s3)
         assert len(desc) > 5
 
+    def test_right_mul_op_mentions_right(self):
+        perm = (2, 1, 3)
+        desc = self.skin.op_description("right_mul_2", (perm,), self.s3)
+        assert "right" in desc.lower()
+
+    def test_left_mul_op_mentions_left(self):
+        perm = (2, 1, 3)
+        desc = self.skin.op_description("left_mul_2", (perm,), self.s3)
+        assert "left" in desc.lower()
+
+    def test_left_and_right_mul_descriptions_differ(self):
+        perm = (2, 1, 3)
+        left_desc = self.skin.op_description("left_mul_2", (perm,), self.s3)
+        right_desc = self.skin.op_description("right_mul_2", (perm,), self.s3)
+        assert left_desc != right_desc
+
 
 # ── PolygonSymmetriesSkin ─────────────────────────────────────────────────────
 
@@ -290,13 +317,26 @@ class TestPolygonSymmetriesSkin:
         s = self.skin.structure_name(self.d4)
         assert "square" in s.lower() or "symmetry" in s.lower()
 
-    def test_mul_op_rotation(self):
-        desc = self.skin.op_description("right_mul", ((1, 0),), self.d4)
-        assert "rotate" in desc.lower() or "degree" in desc.lower()
+    def test_right_mul_rotation_mentions_right(self):
+        desc = self.skin.op_description("right_mul_r1", ((1, 0),), self.d4)
+        assert "right" in desc.lower()
 
-    def test_mul_op_reflection(self):
-        desc = self.skin.op_description("right_mul", ((0, 1),), self.d4)
-        assert "reflect" in desc.lower()
+    def test_left_mul_rotation_mentions_left(self):
+        desc = self.skin.op_description("left_mul_r1", ((1, 0),), self.d4)
+        assert "left" in desc.lower()
+
+    def test_right_mul_reflection_mentions_right(self):
+        desc = self.skin.op_description("right_mul_s0", ((0, 1),), self.d4)
+        assert "right" in desc.lower()
+
+    def test_left_mul_reflection_mentions_left(self):
+        desc = self.skin.op_description("left_mul_s0", ((0, 1),), self.d4)
+        assert "left" in desc.lower()
+
+    def test_left_and_right_mul_descriptions_differ(self):
+        left_desc = self.skin.op_description("left_mul_r1", ((1, 0),), self.d4)
+        right_desc = self.skin.op_description("right_mul_r1", ((1, 0),), self.d4)
+        assert left_desc != right_desc
 
 
 # ── TileFlipSkin ──────────────────────────────────────────────────────────────
@@ -324,6 +364,19 @@ class TestTileFlipSkin:
     def test_inverse_op(self):
         desc = self.skin.op_description("inverse", (), self.d4)
         assert "undo" in desc.lower() or "inverse" in desc.lower()
+
+    def test_right_mul_rotation_mentions_right(self):
+        desc = self.skin.op_description("right_mul_r1", ((1, 0),), self.d4)
+        assert "right" in desc.lower()
+
+    def test_left_mul_rotation_mentions_left(self):
+        desc = self.skin.op_description("left_mul_r1", ((1, 0),), self.d4)
+        assert "left" in desc.lower()
+
+    def test_left_and_right_mul_descriptions_differ(self):
+        left_desc = self.skin.op_description("left_mul_r1", ((1, 0),), self.d4)
+        right_desc = self.skin.op_description("right_mul_r1", ((1, 0),), self.d4)
+        assert left_desc != right_desc
 
 
 # ── SecretCodesSkin ───────────────────────────────────────────────────────────

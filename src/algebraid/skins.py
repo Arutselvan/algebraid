@@ -207,12 +207,18 @@ class DeckOfCardsSkin(SemanticSkin):
                 label = "[" + ", ".join(f"Card {i}" for i in perm) + "]"
                 return f"conjugate by the shuffle {label}"
             return f"conjugate by the shuffle {perm}"
-        if "mul" in op_name and fixed_args:
+        if "left_mul" in op_name and fixed_args:
             perm = fixed_args[0]
             if isinstance(perm, (list, tuple)):
                 label = "[" + ", ".join(f"Card {i}" for i in perm) + "]"
-                return f"apply the shuffle {label} (compose on the right)"
-            return f"apply the shuffle {perm}"
+                return f"apply shuffle {label} on the left (compose: {label} o current)"
+            return f"apply shuffle {perm} on the left"
+        if "right_mul" in op_name and fixed_args:
+            perm = fixed_args[0]
+            if isinstance(perm, (list, tuple)):
+                label = "[" + ", ".join(f"Card {i}" for i in perm) + "]"
+                return f"apply shuffle {label} on the right (compose: current o {label})"
+            return f"apply shuffle {perm} on the right"
         if "power" in op_name and fixed_args:
             k = fixed_args[0]
             return (
@@ -257,12 +263,18 @@ class SeatingSkin(SemanticSkin):
                 label = "[" + ", ".join(self._person(i) for i in perm) + "]"
                 return f"conjugate by the rearrangement {label}"
             return f"conjugate by the rearrangement {perm}"
-        if "mul" in op_name and fixed_args:
+        if "left_mul" in op_name and fixed_args:
             perm = fixed_args[0]
             if isinstance(perm, (list, tuple)):
                 label = "[" + ", ".join(self._person(i) for i in perm) + "]"
-                return f"rearrange seats to {label} (compose on the right)"
-            return f"rearrange seats to {perm}"
+                return f"apply rearrangement {label} on the left (compose: {label} o current)"
+            return f"apply rearrangement {perm} on the left"
+        if "right_mul" in op_name and fixed_args:
+            perm = fixed_args[0]
+            if isinstance(perm, (list, tuple)):
+                label = "[" + ", ".join(self._person(i) for i in perm) + "]"
+                return f"apply rearrangement {label} on the right (compose: current o {label})"
+            return f"apply rearrangement {perm} on the right"
         if "power" in op_name and fixed_args:
             k = fixed_args[0]
             return (
@@ -311,12 +323,22 @@ class PolygonSymmetriesSkin(SemanticSkin):
             if s == 0:
                 return f"conjugate by rotation of {angle} degrees"
             return f"conjugate by (reflection, then rotation of {angle} degrees)"
-        if "mul" in op_name and fixed_args:
+        if "left_mul" in op_name and fixed_args:
             r, s = fixed_args[0]
             angle = round(360 * r / structure.n)
             if s == 0:
-                return "apply the identity (no change)" if r == 0 else f"rotate by {angle} degrees"
-            return "reflect across the primary axis" if r == 0 else f"reflect, then rotate by {angle} degrees"
+                desc = "the identity (no change)" if r == 0 else f"rotation by {angle} degrees"
+            else:
+                desc = "reflection" if r == 0 else f"reflection and rotation by {angle} degrees"
+            return f"compose {desc} on the left"
+        if "right_mul" in op_name and fixed_args:
+            r, s = fixed_args[0]
+            angle = round(360 * r / structure.n)
+            if s == 0:
+                desc = "the identity (no change)" if r == 0 else f"rotation by {angle} degrees"
+            else:
+                desc = "reflection" if r == 0 else f"reflection and rotation by {angle} degrees"
+            return f"compose {desc} on the right"
         if "power" in op_name and fixed_args:
             k = fixed_args[0]
             return f"compose the current transformation with itself {k} time{'s' if k != 1 else ''}"
@@ -347,11 +369,20 @@ class TileFlipSkin(SemanticSkin):
             if s == 0:
                 return f"conjugate by rotating {r} notch{'es' if r != 1 else ''} clockwise"
             return f"conjugate by (flip, then rotate {r} notch{'es' if r != 1 else ''} clockwise)"
-        if "mul" in op_name and fixed_args:
+        if "left_mul" in op_name and fixed_args:
             r, s = fixed_args[0]
             if s == 0:
-                return "apply the identity (no change)" if r == 0 else f"rotate {r} notch{'es' if r != 1 else ''} clockwise"
-            return "flip the tile" if r == 0 else f"flip, then rotate {r} notch{'es' if r != 1 else ''} clockwise"
+                desc = "the identity (no change)" if r == 0 else f"rotation by {r} notch{'es' if r != 1 else ''} clockwise"
+            else:
+                desc = "a flip" if r == 0 else f"flip and rotation by {r} notch{'es' if r != 1 else ''} clockwise"
+            return f"compose {desc} on the left"
+        if "right_mul" in op_name and fixed_args:
+            r, s = fixed_args[0]
+            if s == 0:
+                desc = "the identity (no change)" if r == 0 else f"rotation by {r} notch{'es' if r != 1 else ''} clockwise"
+            else:
+                desc = "a flip" if r == 0 else f"flip and rotation by {r} notch{'es' if r != 1 else ''} clockwise"
+            return f"compose {desc} on the right"
         if "power" in op_name and fixed_args:
             k = fixed_args[0]
             return f"apply the current tile orientation {k} time{'s' if k != 1 else ''} in succession"

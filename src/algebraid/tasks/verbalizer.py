@@ -313,8 +313,19 @@ class Verbalizer:
         """Randomly select a template from the pool."""
         return self._rng.choice(templates)
 
-    def _maybe_add_context(self, lines: List[str], n: Any = None) -> List[str]:
-        """Optionally wrap the prompt in a context frame."""
+    def _maybe_add_context(
+        self, lines: List[str], n: Any = None, skin: Optional[SemanticSkin] = None
+    ) -> List[str]:
+        """Optionally wrap the prompt in a context frame.
+
+        Suppressed when a semantic skin is active — skins provide their own
+        coherent narrative and mixing a context frame on top would create
+        incoherent prompts (e.g. "You are designing a cipher" followed by
+        "the possible seating arrangements of Alice, Bob, Carol, Dave").
+        """
+        if skin is not None:
+            return lines  # skin owns the narrative; no overlay allowed
+
         if self.context_frame:
             frame: Optional[Dict[str, str]] = CONTEXT_FRAMES.get(self.context_frame)
         elif self._rng.random() < 0.3:  # 30% chance of context frame
@@ -327,16 +338,47 @@ class Verbalizer:
             if n is not None:
                 intro = intro.replace("{n}", str(n)).replace("{n_minus_1}", str(n - 1))
             elif "{n}" in intro:
-                # Frame requires {n} but structure has no such attribute  - skip frame
+                # Frame requires {n} but structure has no such attribute - skip frame
                 return lines
             return [intro, ""] + lines
         return lines
 
     def _clean(self, text: str) -> str:
-        """Normalize whitespace and fix stray double-periods."""
-        text = re.sub(r'(?<!,\s)\.{2,}(?!,)', '.', text)
+        """Normalize whitespace and collapse accidental multi-period sequences."""
+        text = re.sub(r'\.{2,}', '.', text)
         text = "\n".join(line.rstrip() for line in text.split("\n"))
         return text
+
+    def _format_hint_chain(self, depth: int, x_str: str) -> str:
+        """Step-by-step output template for chain tasks (intra / adversarial)."""
+        lines = ["Show your work step by step:"]
+        lines.append(f"Start: {x_str}")
+        for i in range(1, depth + 1):
+            lines.append(f"Step {i}: ___")
+        lines.append("Final Answer: ___")
+        return "\n".join(lines)
+
+    def _format_hint_intermediate(self, total: int, k: int, x_str: str) -> str:
+        """Step-by-step output template for intermediate-state tasks (stop at step k)."""
+        lines = [f"Show your work step by step (stop after step {k}):"]
+        lines.append(f"Start: {x_str}")
+        for i in range(1, k + 1):
+            lines.append(f"Step {i}: ___")
+        if k < total:
+            lines.append(f"(Do not continue past step {k}.)")
+        lines.append("Final Answer: ___")
+        return "\n".join(lines)
+
+    def _format_hint_simple(self, answer_type: str) -> str:
+        """Single-line answer format hint for non-chain tasks."""
+        placeholders = {
+            "integer": "[integer]",
+            "element": "[element]",
+            "yes_no": "Yes or No",
+            "tuple": "[tuple]",
+        }
+        ph = placeholders.get(answer_type, "[answer]")
+        return f"Final Answer: {ph}"
 
     def verbalize_intra(
         self,
@@ -344,8 +386,14 @@ class Verbalizer:
         composed_func: ComposedFunction,
         x: Any,
         skin: Optional[SemanticSkin] = None,
+        note: Optional[str] = None,
     ) -> str:
-        """Generate a diverse prompt for an intra-structure task."""
+        """Generate a diverse prompt for an intra-structure task.
+
+        Args:
+            note: Optional one-line adversarial instruction inserted before the
+                  format hint (e.g. "Apply all operations in order.").
+        """
         tmpl: dict = self._pick_template(INTRA_TEMPLATES)
         depth = len(composed_func.operations)
 
@@ -382,10 +430,13 @@ class Verbalizer:
             lines.append(step_str)
 
         lines.append("")
-        lines.append(tmpl["footer"].format(depth=depth))
+        if note:
+            lines.append(note)
+            lines.append("")
+        lines.append(self._format_hint_chain(depth, x_str))
 
         order = getattr(structure, 'n', getattr(structure, 'p', None))
-        lines = self._maybe_add_context(lines, order)
+        lines = self._maybe_add_context(lines, order, skin=skin)
 
         return self._clean("\n".join(lines))
 
@@ -409,14 +460,15 @@ class Verbalizer:
             b_str = composed.element_to_str(b) if b is not None else None
             composed_name = composed.name
 
+        sym = composed.operation_symbol()
         if op_type == "inverse":
             op_desc = f"Compute the inverse of {a_str} in {composed_name}."
         elif op_type == "op_then_inverse":
             b_str_val = composed.element_to_str(b) if skin is None else skin.element_name(b, composed)
-            op_desc = f"Compute the inverse of ({a_str} * {b_str_val}) in {composed_name}."
+            op_desc = f"Compute the inverse of ({a_str} {sym} {b_str_val}) in {composed_name}."
         else:
             b_str_val = composed.element_to_str(b) if skin is None else skin.element_name(b, composed)
-            op_desc = f"{a_str} {composed.operation_symbol()} {b_str_val}"
+            op_desc = f"{a_str} {sym} {b_str_val}"
 
         lines: List[str] = [tmpl["header"].format(
             name=composed_name,
@@ -425,7 +477,7 @@ class Verbalizer:
         lines.append("")
         lines.append(tmpl["task"].format(op_desc=op_desc))
         lines.append("")
-        lines.append(tmpl["footer"])
+        lines.append(self._format_hint_simple("tuple"))
 
         return self._clean("\n".join(lines))
 
@@ -452,7 +504,7 @@ class Verbalizer:
                 expr=expr,
             ))
         lines.append("")
-        lines.append(tmpl["footer"])
+        lines.append(self._format_hint_simple("integer"))
 
         return self._clean("\n".join(lines))
 
@@ -485,6 +537,8 @@ class Verbalizer:
         lines.append("")
         test_str = skin.element_name(test_input, structure) if skin else structure.element_to_str(test_input)
         lines.append(tmpl["question"].format(test=test_str))
+        lines.append("")
+        lines.append(self._format_hint_simple("element"))
 
         return self._clean("\n".join(lines))
 
@@ -516,7 +570,21 @@ class Verbalizer:
             a=a_str,
             b=b_str,
         )
-        return self._clean(prompt)
+
+        # When * is used as the operation symbol in an unskinned prompt, explicitly
+        # disambiguate it from ordinary arithmetic multiplication.
+        if sym == "*" and skin is None:
+            prompt = "Let * denote the group operation.\n" + prompt
+
+        _YES_NO_SUBTYPES = {"commutativity_check", "is_abelian", "is_generator"}
+        _INTEGER_SUBTYPES = {"element_order", "structure_order"}
+        if query_subtype in _YES_NO_SUBTYPES:
+            hint = self._format_hint_simple("yes_no")
+        elif query_subtype in _INTEGER_SUBTYPES:
+            hint = self._format_hint_simple("integer")
+        else:  # identity, inverse_of
+            hint = self._format_hint_simple("element")
+        return self._clean(prompt + "\n" + hint)
 
     def verbalize_intermediate_state(
         self,
@@ -551,7 +619,8 @@ class Verbalizer:
             steps=steps,
             k=query_step,
         )
-        return self._clean(prompt)
+        hint = self._format_hint_intermediate(total, query_step, x_str)
+        return self._clean(prompt + "\n\n" + hint)
 
     def verbalize_verify(
         self,

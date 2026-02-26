@@ -304,9 +304,10 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
             f"Applying inverse once gives {wrong_str}; "
             "a model that stops early misses subsequent inverses."
         )
-        prompt = verbalizer.verbalize_intra(structure, chain, x, skin=skin)
-        # Inject adversarial annotation
-        prompt = prompt.rstrip() + "\nNote: each operation is applied exactly as listed."
+        prompt = verbalizer.verbalize_intra(
+            structure, chain, x, skin=skin,
+            note="Note: each operation is applied exactly as listed.",
+        )
 
     elif adv_type == "self_cancelling":
         structure = _random_cyclic(rng, min_n=4, max_n=15)
@@ -346,8 +347,10 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
             f"After adding {c} the value is {wrong_str}; "
             "a model that ignores the remaining steps stops there."
         )
-        prompt = verbalizer.verbalize_intra(structure, chain, x, skin=skin)
-        prompt = prompt.rstrip() + "\nApply all operations in order, without simplifying intermediate steps."
+        prompt = verbalizer.verbalize_intra(
+            structure, chain, x, skin=skin,
+            note="Apply all operations in order, without simplifying intermediate steps.",
+        )
 
     elif adv_type == "commutativity_trap":
         # Non-abelian structure: find a, b where a*b != b*a
@@ -390,8 +393,10 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
             f"The commuted result {wrong_str} is different; "
             "a model that assumes commutativity will swap the operands."
         )
-        prompt = verbalizer.verbalize_intra(structure, chain, x, skin=skin)
-        prompt = prompt.rstrip() + "\nNote: order of operands matters in this structure."
+        prompt = verbalizer.verbalize_intra(
+            structure, chain, x, skin=skin,
+            note="Note: order of operands matters in this structure.",
+        )
 
     else:  # identity_bait
         structure = _random_cyclic(rng, min_n=4, max_n=15)
@@ -417,8 +422,10 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
             f"The starting value {wrong_str} is not the answer; "
             "a model confused by the identity element may return the input unchanged."
         )
-        prompt = verbalizer.verbalize_intra(structure, chain, x, skin=skin)
-        prompt = prompt.rstrip() + "\nCompute the result step by step."
+        prompt = verbalizer.verbalize_intra(
+            structure, chain, x, skin=skin,
+            note="Compute the result step by step.",
+        )
 
     answer_str = structure.element_to_str(answer_raw_val)
     answer_display = answer_str
