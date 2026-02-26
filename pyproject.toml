@@ -17,13 +17,10 @@ classifiers = [
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# Core dependency: OpenAI SDK (used as the HTTP client for openai + custom_http adapters)
-dependencies = [
-    "openai",
-]
+dependencies = []
 
 [project.optional-dependencies]
-# pip install -e ".[anthropic]"  -- enables the Anthropic adapter
+openai = ["openai"]
 anthropic = ["anthropic"]
 dev = [
     "pytest>=7.0",

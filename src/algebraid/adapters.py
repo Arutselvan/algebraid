@@ -4,13 +4,12 @@ Model adapters for querying language-model APIs.
 Each adapter implements ``run_tasks`` to execute a ``TaskSet`` against a
 specific provider and return a ``{task_id: response}`` dictionary.
 
-Supported adapters
-------------------
-openai       OpenAI and OpenAI-compatible chat completion APIs.
-anthropic    Anthropic Messages API (requires ``anthropic`` package).
-custom_http  Any OpenAI-compatible endpoint via a custom base URL.
-             Set ALGEBRAID_API_BASE or pass base_url as a kwarg.
-huggingface  Not yet implemented (requires local model setup).
+All provider SDKs are optional dependencies:
+
+    openai       pip install -e '.[openai]'      OpenAI chat completion API.
+    anthropic    pip install -e '.[anthropic]'   Anthropic Messages API.
+    custom_http  pip install -e '.[openai]'      Any OpenAI-compatible endpoint.
+    huggingface  Not yet implemented; use custom_http with a vLLM/TGI server.
 """
 
 import os
@@ -50,11 +49,18 @@ class BaseAdapter(ABC):
 class OpenAIAdapter(BaseAdapter):
     """Adapter for OpenAI and OpenAI-compatible chat completion APIs.
 
-    Requires the ``openai`` package and ``OPENAI_API_KEY`` environment variable.
+    Requires the ``openai`` package (``pip install -e '.[openai]'``)
+    and the ``OPENAI_API_KEY`` environment variable.
     """
 
     def run_tasks(self, task_set: TaskSet) -> Dict[str, str]:
-        from openai import OpenAI
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError(
+                "The 'openai' package is required for this adapter. "
+                "Install it with: pip install -e '.[openai]'"
+            ) from None
 
         client = OpenAI()
         predictions: Dict[str, str] = {}
@@ -94,7 +100,13 @@ class AnthropicAdapter(BaseAdapter):
     """
 
     def run_tasks(self, task_set: TaskSet) -> Dict[str, str]:
-        from anthropic import Anthropic
+        try:
+            from anthropic import Anthropic
+        except ImportError:
+            raise ImportError(
+                "The 'anthropic' package is required for this adapter. "
+                "Install it with: pip install -e '.[anthropic]'"
+            ) from None
 
         client = Anthropic()
         predictions: Dict[str, str] = {}
@@ -136,7 +148,8 @@ class CustomHTTPAdapter(BaseAdapter):
       2. The ``base_url`` kwarg passed to the constructor (not exposed via CLI).
       3. Falls back to ``http://localhost:11434/v1`` (Ollama default).
 
-    Requires the ``openai`` package (used as HTTP client only; no OpenAI key needed).
+    Requires the ``openai`` package (``pip install -e '.[openai]'``), used as
+    the HTTP client only - no OpenAI API key is needed for self-hosted servers.
     Set ``OPENAI_API_KEY=none`` if the server does not require authentication.
     """
 
@@ -149,7 +162,13 @@ class CustomHTTPAdapter(BaseAdapter):
         )
 
     def run_tasks(self, task_set: TaskSet) -> Dict[str, str]:
-        from openai import OpenAI
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError(
+                "The 'openai' package is required for the custom_http adapter. "
+                "Install it with: pip install -e '.[openai]'"
+            ) from None
 
         client = OpenAI(
             base_url=self.base_url,

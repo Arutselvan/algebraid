@@ -22,12 +22,16 @@ ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks buil
 
 ```bash
 pip install -e .
-
-# Optional: Anthropic adapter
-pip install -e ".[anthropic]"
 ```
 
-Set API keys before running:
+No provider SDK is bundled. Install only what you need:
+
+```bash
+pip install -e ".[openai]"      # OpenAI API and custom HTTP endpoints
+pip install -e ".[anthropic]"   # Anthropic API
+```
+
+Set the corresponding API key before running:
 
 ```bash
 export OPENAI_API_KEY=sk-...
