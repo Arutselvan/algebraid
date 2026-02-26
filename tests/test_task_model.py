@@ -151,3 +151,29 @@ class TestTaskSet:
             assert TaskFamily.CONCEPTUAL_QUERY in families
         finally:
             os.unlink(path)
+
+    def test_empty_metadata_roundtrip_is_dict_not_none(self):
+        """Empty metadata must reload as {} not None (Bug 2 regression)."""
+        task = Task(
+            task_id="AG-t1",
+            prompt="p",
+            answer="0",
+            answer_raw="0",
+            depth=1,
+            family=TaskFamily.INTRA_STRUCTURE,
+            metadata={},  # empty -> serialised as null
+        )
+        d = task.to_dict()
+        assert d["metadata"] is None  # serializer converts {} to null
+
+        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False, mode="w") as f:
+            path = f.name
+            f.write(json.dumps(d) + "\n")
+        try:
+            ts = TaskSet.from_jsonl(path)
+            reloaded = ts[0]
+            # Must be a dict so callers can safely call .get() on it
+            assert isinstance(reloaded.metadata, dict)
+            assert reloaded.metadata == {}
+        finally:
+            os.unlink(path)

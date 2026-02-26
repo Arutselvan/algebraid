@@ -113,6 +113,9 @@ class TaskSet:
                 data["dimension"] = CompositionDimension(data["dimension"])
                 # Optional fields may be absent in compact format
                 data.setdefault("metadata", {})
+                # Serializer stores empty metadata as null; restore to {} on load.
+                if data.get("metadata") is None:
+                    data["metadata"] = {}
                 data.setdefault("solution_trace", None)
                 tasks.append(Task(**data))
         return cls(tasks)

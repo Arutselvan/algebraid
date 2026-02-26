@@ -101,7 +101,7 @@ class TaskValidator:
             r.error("Prompt is missing or too short (< 10 chars).")
         if not task.answer and task.answer != "0":
             r.error("Missing answer.")
-        if task.answer_raw is None and task.answer_raw != 0:
+        if task.answer_raw is None:
             r.error("Missing answer_raw.")
         if task.depth < 0:
             r.error(f"Invalid depth: {task.depth}.")
@@ -155,6 +155,7 @@ class TaskValidator:
     # -- 4. Trace checks ----------------------------------------------------
 
     def _check_trace(self, task: Task, r: ValidationResult) -> None:
+        assert task.solution_trace is not None  # caller guards this
         trace = task.solution_trace
         if trace[0][0] != "start":
             r.warn("Solution trace does not begin with a 'start' entry.")

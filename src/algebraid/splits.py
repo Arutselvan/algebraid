@@ -192,6 +192,13 @@ _DIMENSION_SHORT: dict = {
     "intermediate":   "intermediate_state",
 }
 
+# Dimension values that require explicit opt-in via dimension key.
+# Tasks with these dimensions must NOT be included in family-based matches
+# (e.g. "intra") because they share the intra-structure family label while
+# having distinct semantics. Without this guard, split_by_family(["intra"],
+# ["adversarial"]) would place adversarial tasks in both halves.
+_DIMENSION_OPT_IN: Set[str] = set(_DIMENSION_SHORT.values())
+
 
 def split_by_family(
     task_set: TaskSet,
@@ -204,6 +211,11 @@ def split_by_family(
     Accepted keys: "intra", "inter", "field", "rule", "conceptual",
                    "adversarial", "intermediate"
     or the full family value strings from TaskFamily enum.
+
+    Note: "adversarial" and "intermediate" tasks share the intra-structure
+    family label and are distinguished by dimension. Using "intra" will
+    include only standard intra-structure tasks; adversarial/intermediate
+    tasks are included only when explicitly named.
 
     Research question
     -----------------
@@ -231,7 +243,15 @@ def split_by_family(
     def _in_group(task: Task, fams: Set[str], dims: Set[str]) -> bool:
         fv = _family_value(task)
         dv = _dimension_value(task)
-        return fv in fams or dv in dims
+        # Explicit dimension match always wins.
+        if dv in dims:
+            return True
+        # Family match: exclude opt-in dimensions unless they were explicitly
+        # requested above, to prevent adversarial/intermediate tasks from
+        # silently entering the "intra" bucket.
+        if fv in fams and dv not in _DIMENSION_OPT_IN:
+            return True
+        return False
 
     train_tasks = [t for t in task_set if _in_group(t, train_fams, train_dims)]
     test_tasks = [t for t in task_set if _in_group(t, test_fams, test_dims)]

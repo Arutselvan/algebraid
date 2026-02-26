@@ -129,6 +129,35 @@ class TestFitScalingLaw:
         law_extra = fit_scaling_law(with_rule)
         assert law_base["alpha"] == law_extra["alpha"]
 
+    def test_adversarial_tasks_excluded(self):
+        """Adversarial tasks (family=intra, dim=adversarial) must not change the fit.
+
+        They always have depth 1-2 regardless of the requested depth, so
+        including them would distort the scaling curve (Bug 1 regression).
+        """
+        base = self._chain_report()
+        with_adversarial = _make_report(base.results + [
+            # All correct at depth=1 -- would inflate depth-1 accuracy if included
+            _make_result("a1", True, INTRA, dimension="adversarial", depth=1),
+            _make_result("a2", True, INTRA, dimension="adversarial", depth=1),
+            _make_result("a3", True, INTRA, dimension="adversarial", depth=1),
+        ])
+        law_base = fit_scaling_law(base)
+        law_extra = fit_scaling_law(with_adversarial)
+        assert law_base["alpha"] == law_extra["alpha"]
+        assert law_base["A"] == law_extra["A"]
+
+    def test_intermediate_tasks_excluded(self):
+        """Intermediate tasks (family=intra, dim=intermediate_state) must not change the fit."""
+        base = self._chain_report()
+        with_intermediate = _make_report(base.results + [
+            _make_result("i1", True, INTRA, dimension="intermediate_state", depth=2),
+            _make_result("i2", True, INTRA, dimension="intermediate_state", depth=2),
+        ])
+        law_base = fit_scaling_law(base)
+        law_extra = fit_scaling_law(with_intermediate)
+        assert law_base["alpha"] == law_extra["alpha"]
+
     def test_no_chain_results_returns_note(self):
         report = _make_report([
             _make_result("c1", True, CONCEPTUAL, depth=1),

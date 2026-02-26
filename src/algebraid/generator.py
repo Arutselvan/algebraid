@@ -292,25 +292,7 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
         n = structure.n
         c = rng.randint(1, n - 1)
         neg_c = (-c) % n
-        all_ops = make_standard_operations(structure, rng)
-        # Build custom left_mul_c and left_mul_neg_c
-        op_add = AlgebraicOperation(
-            name=f"left_mul_{c}",
-            func=lambda val, k: structure.op(structure.multiply(1, k) if hasattr(structure, 'multiply') else k, val),
-            arity=1,
-            description=f"add {c} (mod {n})",
-            symbol=f"+{c}",
-            fixed_args=(c,),
-        )
-        op_sub = AlgebraicOperation(
-            name=f"left_mul_{neg_c}",
-            func=lambda val, k: structure.op(structure.multiply(1, k) if hasattr(structure, 'multiply') else k, val),
-            arity=1,
-            description=f"add {neg_c} (mod {n})",
-            symbol=f"+{neg_c}",
-            fixed_args=(neg_c,),
-        )
-        # Use right_mul ops for clean semantics: (x + c) then (x + n - c) = x
+        # Build right_mul ops: (x + c) then (x + n - c) = x (self-cancelling)
         op_add_r = AlgebraicOperation(
             name=f"right_mul_{c}",
             func=lambda val, k: (val + k) % n,
@@ -455,7 +437,7 @@ def _generate_intermediate_state_task(rng, depth, idx, seed, verbalizer, use_ski
     prompt = verbalizer.verbalize_intermediate_state(structure, chain, x, k, skin=skin)
 
     return Task(
-        task_id=_task_id(seed, "intermediate", k, idx),
+        task_id=_task_id(seed, "intermediate", depth, idx),
         prompt=prompt,
         answer=answer_display,
         answer_raw=answer_str,
@@ -515,7 +497,8 @@ class AlgebraidGenerator:
                         task = gen_func(self.rng, depth, blk_counter, self.seed, self.verbalizer)
                         all_tasks.append(task)
                         blk_counter += 1
-                    except Exception:
+                    except Exception as exc:
+                        print(f"WARNING: skipped {family_name} depth={depth} idx={i}: {exc}")
                         continue
 
         return TaskSet(

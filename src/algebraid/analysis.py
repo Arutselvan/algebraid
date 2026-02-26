@@ -38,10 +38,25 @@ _CHAIN_FAMILIES = {
     "field arithmetic",
 }
 
+# Adversarial and intermediate tasks share the intra-structure family label
+# but have artificially constructed depths (adversarial: always 1-2;
+# intermediate: the query step k, not the full chain length).
+# They must be excluded from depth-scaling analyses by dimension.
+_CHAIN_EXCLUDED_DIMENSIONS = {"adversarial", "intermediate_state"}
+
 
 def _chain_results(report: EvalReport) -> List[EvalResult]:
-    """Return only the results from chain families."""
-    return [r for r in report.results if r.family in _CHAIN_FAMILIES]
+    """Return only the results from genuine chain families.
+
+    Filters by family AND excludes adversarial/intermediate dimensions,
+    since both share the 'intra-structure composition' family label but
+    have depths that do not reflect monotonic difficulty scaling.
+    """
+    return [
+        r for r in report.results
+        if r.family in _CHAIN_FAMILIES
+        and r.dimension not in _CHAIN_EXCLUDED_DIMENSIONS
+    ]
 
 
 def _depth_stats_from_results(results: List[EvalResult]) -> Dict[int, Dict[str, Any]]:

@@ -291,16 +291,19 @@ class AlgebraidEvaluator:
                 v["accuracy"] = v["correct"] / v["total"] if v["total"] > 0 else 0.0
 
         # Compositional ceiling: computed on chain families only so that
-        # conceptual (always depth=1) and rule tasks do not distort the
-        # depth-accuracy relationship.
+        # conceptual (always depth=1), rule, adversarial, and intermediate
+        # tasks do not distort the depth-accuracy relationship.
+        # Adversarial and intermediate share the intra-structure family label
+        # so they must also be excluded by dimension.
         _CHAIN_FAMILIES = {
             "intra-structure composition",
             "inter-structure composition",
             "field arithmetic",
         }
+        _CHAIN_EXCLUDED_DIMS = {"adversarial", "intermediate_state"}
         chain_depth_stats: Dict = defaultdict(lambda: {"correct": 0, "total": 0})
         for r in results:
-            if r.family in _CHAIN_FAMILIES:
+            if r.family in _CHAIN_FAMILIES and r.dimension not in _CHAIN_EXCLUDED_DIMS:
                 chain_depth_stats[r.depth]["total"] += 1
                 if r.correct:
                     chain_depth_stats[r.depth]["correct"] += 1
