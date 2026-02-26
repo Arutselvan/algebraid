@@ -17,11 +17,22 @@ classifiers = [
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+# Core dependency: OpenAI SDK (used as the HTTP client for openai + custom_http adapters)
 dependencies = [
     "openai",
-    "matplotlib",
-    "numpy",
 ]
+
+[project.optional-dependencies]
+# pip install -e ".[anthropic]"  -- enables the Anthropic adapter
+anthropic = ["anthropic"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
 
 [project.urls]
 "Homepage" = "https://github.com/Arutselvan/algebraid"

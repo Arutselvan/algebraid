@@ -3,7 +3,8 @@ Symbolic answer verification.
 
 Handles multiple equivalent representations of algebraic elements
 (e.g. ``(1 2 3)`` vs ``(1, 2, 3)``) and extracts answers from common
-model output formats including LaTeX ``\\boxed{}``.
+model output formats including LaTeX ``\\boxed{}``, Yes/No binary
+answers, and multiple-choice letters (A/B/C/D).
 """
 
 import re
@@ -21,6 +22,60 @@ def normalize_answer(answer: str) -> str:
     return s
 
 
+def _extract_binary_answer(text: str) -> Optional[str]:
+    """Return 'yes' or 'no' if the response unambiguously states one.
+
+    Matches standalone True/False as well, mapping both to yes/no.
+    Returns None if no clear binary answer is found.
+    """
+    t = text.strip().lower()
+    # Exact single-token answer
+    if t in ("yes", "no", "true", "false"):
+        return "yes" if t in ("yes", "true") else "no"
+    # "the answer is yes/no/true/false" anywhere in the text
+    m = re.search(
+        r'(?:the\s+)?(?:final\s+)?(?:answer|result)\s*(?:is\s*)?[:\s]*\b(yes|no|true|false)\b',
+        t,
+    )
+    if m:
+        val = m.group(1)
+        return "yes" if val in ("yes", "true") else "no"
+    # Standalone word at the very start (e.g. "Yes, because…")
+    m = re.match(r'^(yes|no|true|false)\b', t)
+    if m:
+        val = m.group(1)
+        return "yes" if val in ("yes", "true") else "no"
+    return None
+
+
+def _extract_multiple_choice(text: str) -> Optional[str]:
+    """Return the selected letter (a/b/c/d) if clearly indicated.
+
+    Returns None if no clear single-letter choice is found.
+    """
+    t = text.strip().lower()
+    # "answer is B" / "option B" / "choice B" / "answer: B"
+    m = re.search(
+        r'\b(?:answer|option|choice)\s*(?:is\s*)?[:\s]*[(\[]?([abcd])[)\]]?',
+        t,
+    )
+    if m:
+        return m.group(1)
+    # "(B)" or "[B]" or "B." as a standalone token
+    m = re.search(r'[(\[]([abcd])[)\]][.:\s]', t)
+    if m:
+        return m.group(1)
+    # Single letter at start of response
+    m = re.match(r'^[(\[]?([abcd])[)\]]?[.:\s]', t)
+    if m:
+        return m.group(1)
+    # Single letter at end of response (final answer format)
+    m = re.search(r'[(\[]?([abcd])[)\]]?\.?\s*$', t)
+    if m and len(t.split()) <= 5:  # only for short responses to avoid false positives
+        return m.group(1)
+    return None
+
+
 def extract_answer(response: str) -> str:
     """Extract the final answer from a model's response."""
     text: str = response.strip()
@@ -29,6 +84,16 @@ def extract_answer(response: str) -> str:
     boxed_match = re.search(r'\\boxed\{([^}]+)\}', text)
     if boxed_match:
         return normalize_answer(boxed_match.group(1))
+
+    # Check for binary Yes/No answers before other patterns
+    binary = _extract_binary_answer(text.lower())
+    if binary is not None:
+        return binary
+
+    # Check for multiple-choice letter answers
+    mc = _extract_multiple_choice(text.lower())
+    if mc is not None:
+        return mc
 
     # Check for "the answer is X" or "the result is X"
     answer_match = re.search(
@@ -102,7 +167,7 @@ def _parse_tuple(s: str) -> Optional[tuple]:
         return None
     try:
         result = eval(s, {"__builtins__": {}}, {})
-        if isinstance(result, (tuple, int)):
+        if isinstance(result, tuple):
             return result
     except Exception:
         return None

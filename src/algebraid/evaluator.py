@@ -5,7 +5,7 @@ Scores model predictions along composition depth, task family, Hupkes
 compositionality dimension, and four algebraic complexity metrics.
 """
 
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from collections import defaultdict
 import json
@@ -52,15 +52,25 @@ class EvalReport:
     avg_orbit_complexity: float = 0.0
     avg_structural_interference: float = 0.0
 
-    # Raw results
+    # Run identity (populated by pipeline or explicit evaluate --run-id)
+    run_id: str = ""
+    timestamp: str = ""
+
+    # Diagnostics
+    missing_predictions: int = 0
+
+    # Per-task results (needed for error taxonomy and phase analysis)
     results: List[EvalResult] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "run_id": self.run_id,
+            "timestamp": self.timestamp,
             "model_name": self.model_name,
             "task_set_name": self.task_set_name,
             "total_tasks": self.total_tasks,
             "total_correct": self.total_correct,
+            "missing_predictions": self.missing_predictions,
             "accuracy_overall": round(self.accuracy_overall, 4),
             "compositional_ceiling_50": self.compositional_ceiling_50,
             "compositional_ceiling_25": self.compositional_ceiling_25,
@@ -95,7 +105,59 @@ class EvalReport:
                 for k, v in self.accuracy_by_dimension.items()
                 if v["total"] > 0
             },
+            # Compact per-task results for downstream analysis (response capped at 512 chars)
+            "results": [
+                {
+                    "task_id": r.task_id,
+                    "correct": r.correct,
+                    "model_response": r.model_response[:512],
+                    "ground_truth": r.ground_truth,
+                    "depth": r.depth,
+                    "family": r.family,
+                    "dimension": r.dimension,
+                }
+                for r in self.results
+            ],
         }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "EvalReport":
+        """Reconstruct an EvalReport from a saved dict, including per-task results."""
+        results = [
+            EvalResult(
+                task_id=r["task_id"],
+                correct=r["correct"],
+                model_response=r.get("model_response", ""),
+                ground_truth=r.get("ground_truth", ""),
+                depth=r.get("depth", 0),
+                family=r.get("family", ""),
+                dimension=r.get("dimension", ""),
+            )
+            for r in d.get("results", [])
+        ]
+        cx = d.get("algebraic_complexity", {})
+        return cls(
+            run_id=d.get("run_id", ""),
+            timestamp=d.get("timestamp", ""),
+            model_name=d.get("model_name", "unknown"),
+            task_set_name=d.get("task_set_name", "unknown"),
+            total_tasks=d.get("total_tasks", 0),
+            total_correct=d.get("total_correct", 0),
+            missing_predictions=d.get("missing_predictions", 0),
+            accuracy_overall=d.get("accuracy_overall", 0.0),
+            accuracy_by_depth={
+                int(k): v for k, v in d.get("accuracy_by_depth", {}).items()
+            },
+            accuracy_by_family=d.get("accuracy_by_family", {}),
+            accuracy_by_dimension=d.get("accuracy_by_dimension", {}),
+            compositional_ceiling_50=d.get("compositional_ceiling_50"),
+            compositional_ceiling_25=d.get("compositional_ceiling_25"),
+            avg_algebraic_entropy=cx.get("avg_algebraic_entropy", 0.0),
+            avg_commutativity_distance=cx.get("avg_commutativity_distance", 0.0),
+            avg_orbit_complexity=cx.get("avg_orbit_complexity", 0.0),
+            avg_structural_interference=cx.get("avg_structural_interference", 0.0),
+            results=results,
+        )
 
     def save(self, path: str) -> None:
         with open(path, "w") as f:
@@ -104,10 +166,15 @@ class EvalReport:
     def print_summary(self) -> None:
         print(f"\n{'='*60}")
         print(f"  ALGEBRAID Evaluation Report")
-        print(f"  Model: {self.model_name}")
-        print(f"  Task Set: {self.task_set_name}")
+        if self.run_id:
+            print(f"  Run      : {self.run_id}")
+        print(f"  Model    : {self.model_name}")
+        print(f"  Task Set : {self.task_set_name}")
         print(f"{'='*60}")
-        print(f"\n  Overall Accuracy: {self.accuracy_overall:.1%} ({self.total_correct}/{self.total_tasks})")
+        print(f"\n  Overall Accuracy: {self.accuracy_overall:.1%}"
+              f" ({self.total_correct}/{self.total_tasks})")
+        if self.missing_predictions:
+            print(f"  Missing Predictions: {self.missing_predictions} (scored as wrong)")
         print(f"  Compositional Ceiling (50%): depth {self.compositional_ceiling_50}")
         print(f"  Compositional Ceiling (25%): depth {self.compositional_ceiling_25}")
 
@@ -139,7 +206,7 @@ class EvalReport:
 
 
 class AlgebraidEvaluator:
-    """Evaluates model predictions against a ALGEBRAID task set."""
+    """Evaluates model predictions against an ALGEBRAID task set."""
 
     def __init__(self, strict: bool = False) -> None:
         self.strict = strict
@@ -149,11 +216,20 @@ class AlgebraidEvaluator:
         task_set: TaskSet,
         predictions: Dict[str, str],
         model_name: str = "unknown",
+        run_id: str = "",
+        timestamp: str = "",
     ) -> EvalReport:
+        if not isinstance(predictions, dict):
+            raise TypeError(
+                f"predictions must be a dict mapping task_id -> response, "
+                f"got {type(predictions).__name__}"
+            )
+
         results: List[EvalResult] = []
         depth_stats: defaultdict = defaultdict(lambda: {"correct": 0, "total": 0})
         family_stats: defaultdict = defaultdict(lambda: {"correct": 0, "total": 0})
         dim_stats: defaultdict = defaultdict(lambda: {"correct": 0, "total": 0})
+        missing = 0
 
         complexity_totals = {
             "algebraic_entropy": 0.0,
@@ -164,10 +240,15 @@ class AlgebraidEvaluator:
         complexity_count = 0
 
         for task in task_set:
+            if task.task_id not in predictions:
+                missing += 1
             response: str = predictions.get(task.task_id, "")
-            correct: bool = check_answer(response, task.answer, strict=self.strict)
 
-            # Compute algebraic complexity
+            try:
+                correct: bool = check_answer(response, task.answer, strict=self.strict)
+            except Exception:
+                correct = False
+
             try:
                 complexity = compute_complexity(task)
                 complexity_totals["algebraic_entropy"] += complexity.algebraic_entropy
@@ -178,32 +259,35 @@ class AlgebraidEvaluator:
             except Exception:
                 complexity = None
 
+            family_val = task.family.value if hasattr(task.family, "value") else str(task.family)
+            dim_val = task.dimension.value if hasattr(task.dimension, "value") else str(task.dimension)
+
             result = EvalResult(
                 task_id=task.task_id,
                 correct=correct,
                 model_response=response,
                 ground_truth=task.answer,
                 depth=task.depth,
-                family=task.family.value if hasattr(task.family, "value") else task.family,
-                dimension=task.dimension.value if hasattr(task.dimension, "value") else task.dimension,
+                family=family_val,
+                dimension=dim_val,
                 complexity=complexity,
             )
             results.append(result)
 
             depth_stats[task.depth]["total"] += 1
-            family_stats[result.family]["total"] += 1
-            dim_stats[result.dimension]["total"] += 1
+            family_stats[family_val]["total"] += 1
+            dim_stats[dim_val]["total"] += 1
 
             if correct:
                 depth_stats[task.depth]["correct"] += 1
-                family_stats[result.family]["correct"] += 1
-                dim_stats[result.dimension]["correct"] += 1
+                family_stats[family_val]["correct"] += 1
+                dim_stats[dim_val]["correct"] += 1
 
         total = len(results)
         total_correct = sum(1 for r in results if r.correct)
 
         for stats_dict in [depth_stats, family_stats, dim_stats]:
-            for k, v in stats_dict.items():
+            for v in stats_dict.values():
                 v["accuracy"] = v["correct"] / v["total"] if v["total"] > 0 else 0.0
 
         ceiling_50 = self._find_ceiling(depth_stats, 0.50)
@@ -211,10 +295,13 @@ class AlgebraidEvaluator:
 
         n = complexity_count or 1
         return EvalReport(
+            run_id=run_id,
+            timestamp=timestamp,
             model_name=model_name,
             task_set_name=task_set.name,
             total_tasks=total,
             total_correct=total_correct,
+            missing_predictions=missing,
             accuracy_overall=total_correct / total if total > 0 else 0.0,
             accuracy_by_depth=dict(depth_stats),
             accuracy_by_family=dict(family_stats),

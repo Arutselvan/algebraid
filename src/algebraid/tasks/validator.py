@@ -20,7 +20,7 @@ import re
 import json
 from typing import Any, Dict, List
 
-from ..task_model import Task, TaskSet
+from ..task_model import Task, TaskSet, CompositionDimension
 
 
 # ── Result container ────────────────────────────────────────────────────────
@@ -160,6 +160,10 @@ class TaskValidator:
             r.warn("Solution trace does not begin with a 'start' entry.")
         expected_length = task.depth + 1
         if len(trace) != expected_length:
+            # Intermediate-state tasks store only the prefix of the chain up to
+            # the queried step, so a shorter trace is by design — not a defect.
+            if task.dimension == CompositionDimension.INTERMEDIATE_STATE:
+                return
             r.warn(
                 f"Trace length ({len(trace)}) differs from expected "
                 f"({expected_length} = depth {task.depth} + 1)."

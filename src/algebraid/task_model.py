@@ -12,22 +12,25 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 
 class TaskFamily(str, Enum):
-    """The four core types of compositional tasks."""
+    """The core types of compositional tasks."""
 
     INTRA_STRUCTURE = "intra-structure composition"
     INTER_STRUCTURE = "inter-structure composition"
     FIELD_ARITHMETIC = "field arithmetic"
     RULE_INDUCTION = "rule induction"
+    CONCEPTUAL_QUERY = "conceptual query"
 
 
 class CompositionDimension(str, Enum):
-    """Standard dimensions of compositional generalization (from Hupkes et al., 2020)."""
+    """Dimensions of compositional generalization (Hupkes et al., 2020) plus extensions."""
 
     GENERAL = "general"
     SYSTEMATICITY = "systematicity"
     PRODUCTIVITY = "productivity"
     SUBSTITUTIVITY = "substitutivity"
     OVERGENERALIZATION = "overgeneralization"
+    ADVERSARIAL = "adversarial"
+    INTERMEDIATE_STATE = "intermediate_state"
 
 
 @dataclass
