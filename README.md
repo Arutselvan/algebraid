@@ -16,7 +16,7 @@ ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks buil
 | **Independently verified** | Proof engine re-derives every answer from the solution trace |
 | **Non-memorisable** | Unlimited procedural variation; no fixed test set |
 | **Reproducible** | Same seed -> same task set |
-| **Multi-dimensional** | 7 generator families x 7 compositional dimensions x 4 complexity metrics |
+| **Multi-dimensional** | 5 task families x 7 compositional dimensions x 4 complexity metrics |
 
 ## Install
 
