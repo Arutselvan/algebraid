@@ -63,8 +63,18 @@ def compute_algebraic_entropy(task: Task) -> float:
     space that the model must navigate? For intra-structure tasks, this is
     log2(|G|) * depth. For inter-structure tasks, it's the sum of logs of
     component group orders.
+
+    Returns 0.0 for conceptual query tasks: they have no chain search space.
+    Use compute_conceptual_depth() for difficulty of conceptual tasks.
     """
     if not task.structures:
+        return 0.0
+
+    # Conceptual tasks ask structural property questions, not chain traversal.
+    # Applying the chain formula (log2(|G|) * depth) gives a number but it has
+    # no meaning: "what is the identity element of Z_12?" does not require
+    # navigating 2^log2(12) search states.
+    if task.family == TaskFamily.CONCEPTUAL_QUERY:
         return 0.0
 
     if task.family == TaskFamily.INTER_STRUCTURE:

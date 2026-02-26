@@ -245,8 +245,18 @@ def _classify_error(result: EvalResult) -> str:
     if _HALLUCINATION_RE.search(resp):
         return "hallucination"
 
-    resp_num = _to_num(resp)
-    gt_num = _to_num(result.ground_truth)
+    # Adversarial-dimension errors are always labelled adversarial_trap regardless
+    # of the numeric diff, since the whole point is to track trap-specific failures.
+    if result.dimension == CompositionDimension.ADVERSARIAL.value:
+        return "adversarial_trap"
+
+    # Skip numeric comparison for tuple answers (permutation/dihedral elements).
+    # _to_num would parse "(2, 1, 3)" as 2 and "(1, 2, 3)" as 1, giving a
+    # spurious diff=1 "off_by_one" classification for any permutation error.
+    is_tuple_answer = result.ground_truth.strip().startswith("(")
+
+    resp_num = None if is_tuple_answer else _to_num(resp)
+    gt_num = None if is_tuple_answer else _to_num(result.ground_truth)
 
     if resp_num is not None and gt_num is not None:
         diff = abs(resp_num - gt_num)
@@ -257,9 +267,6 @@ def _classify_error(result: EvalResult) -> str:
 
     if resp.lower() in ("0", "1", "e", "identity", "(0)", "(1)"):
         return "identity_confusion"
-
-    if result.dimension == CompositionDimension.ADVERSARIAL.value:
-        return "adversarial_trap"
 
     return "other"
 
@@ -358,8 +365,14 @@ def stability_breakdown(report: EvalReport) -> List[Dict[str, Any]]:
     Each entry: depth, accuracy, correct, total, fitted_accuracy,
                 errors_by_category.
 
-    Suitable for plotting Figure 1 of the paper.
+    Uses chain families only (same as fit_scaling_law) so that the accuracy
+    values and the fitted line are computed from the same population at each
+    depth.  The full per-family and per-dimension breakdowns remain available
+    via report.accuracy_by_family and report.accuracy_by_dimension.
     """
+    chain = _chain_results(report)
+    chain_stats = _depth_stats_from_results(chain)
+
     law = fit_scaling_law(report)
     fitted_map = {row["depth"]: row["fitted"] for row in law.get("data", [])}
     by_depth_errors = error_taxonomy(report).get("by_depth", {})
@@ -373,7 +386,7 @@ def stability_breakdown(report: EvalReport) -> List[Dict[str, Any]]:
             "fitted_accuracy": fitted_map.get(depth),
             "errors_by_category": by_depth_errors.get(depth, {}),
         }
-        for depth, d in sorted(report.accuracy_by_depth.items())
+        for depth, d in sorted(chain_stats.items())
     ]
 
 
