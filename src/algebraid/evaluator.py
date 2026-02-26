@@ -290,8 +290,25 @@ class AlgebraidEvaluator:
             for v in stats_dict.values():
                 v["accuracy"] = v["correct"] / v["total"] if v["total"] > 0 else 0.0
 
-        ceiling_50 = self._find_ceiling(depth_stats, 0.50)
-        ceiling_25 = self._find_ceiling(depth_stats, 0.25)
+        # Compositional ceiling: computed on chain families only so that
+        # conceptual (always depth=1) and rule tasks do not distort the
+        # depth-accuracy relationship.
+        _CHAIN_FAMILIES = {
+            "intra-structure composition",
+            "inter-structure composition",
+            "field arithmetic",
+        }
+        chain_depth_stats: Dict = defaultdict(lambda: {"correct": 0, "total": 0})
+        for r in results:
+            if r.family in _CHAIN_FAMILIES:
+                chain_depth_stats[r.depth]["total"] += 1
+                if r.correct:
+                    chain_depth_stats[r.depth]["correct"] += 1
+        for v in chain_depth_stats.values():
+            v["accuracy"] = v["correct"] / v["total"] if v["total"] > 0 else 0.0
+
+        ceiling_50 = self._find_ceiling(chain_depth_stats, 0.50)
+        ceiling_25 = self._find_ceiling(chain_depth_stats, 0.25)
 
         n = complexity_count or 1
         return EvalReport(

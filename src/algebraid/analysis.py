@@ -1,18 +1,20 @@
 """
 Error analysis suite for ALGEBRAID evaluation results.
 
-Addresses paper Blocker 2 (New Insight) by providing analyses beyond
-simple accuracy-vs-depth tables:
+  fit_scaling_law()       Power-law decay fit on chain tasks: acc(d) ~= A * depth^(-alpha)
+  find_phase_transition() Steepest accuracy drop and first sub-50% depth (chain tasks only)
+  error_taxonomy()        Mechanistic failure-mode classification
+  hallucination_onset()   Depth at which refusal/nonsense rate rises (chain tasks only)
+  stability_breakdown()   Per-depth curve enriched with taxonomy + fitted values
+  run_analysis()          Consolidated report dict (all of the above)
+  print_analysis()        Human-readable console output
 
-  fit_scaling_law()      Power-law decay fit:  acc(d) ~= A * depth^(-alpha)
-  find_phase_transition() Steepest accuracy drop and first sub-50% depth
-  error_taxonomy()       Mechanistic failure-mode classification
-  hallucination_onset()  Depth at which refusal/nonsense rate rises
-  stability_breakdown()  Per-depth curve enriched with taxonomy + fitted values
-  run_analysis()         Consolidated report dict (all of the above)
-  print_analysis()       Human-readable console output
-
-All functions accept an EvalReport from evaluator.py.
+Depth-based analyses (scaling law, phase transition, hallucination onset, compositional
+ceiling) operate only on chain families (intra-structure, inter-structure, field
+arithmetic) where depth meaningfully corresponds to task difficulty. Conceptual queries
+(always depth=1, different character), rule induction (more examples -> easier, not
+harder), adversarial, and intermediate tasks are excluded from depth-scaling analyses
+but appear in all accuracy breakdowns.
 """
 
 from __future__ import annotations
@@ -24,6 +26,36 @@ from typing import Any, Dict, List, Optional
 
 from .evaluator import EvalReport, EvalResult
 from .task_model import CompositionDimension
+
+
+# Families where depth meaningfully corresponds to task difficulty.
+# Excluded: conceptual (always depth=1, different character),
+#           rule (more examples -> easier, not harder),
+#           adversarial and intermediate (depth distorted by construction).
+_CHAIN_FAMILIES = {
+    "intra-structure composition",
+    "inter-structure composition",
+    "field arithmetic",
+}
+
+
+def _chain_results(report: EvalReport) -> List[EvalResult]:
+    """Return only the results from chain families."""
+    return [r for r in report.results if r.family in _CHAIN_FAMILIES]
+
+
+def _depth_stats_from_results(results: List[EvalResult]) -> Dict[int, Dict[str, Any]]:
+    """Compute per-depth accuracy stats from a list of EvalResult objects."""
+    stats: Dict[int, Dict[str, Any]] = {}
+    for r in results:
+        if r.depth not in stats:
+            stats[r.depth] = {"correct": 0, "total": 0}
+        stats[r.depth]["total"] += 1
+        if r.correct:
+            stats[r.depth]["correct"] += 1
+    for v in stats.values():
+        v["accuracy"] = v["correct"] / v["total"] if v["total"] > 0 else 0.0
+    return stats
 
 
 # -- 1. Error Scaling Law -----------------------------------------------------
@@ -38,6 +70,11 @@ def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
 
         log(acc) = log(A) - alpha * log(d)
 
+    Operates on chain families only (intra-structure, inter-structure, field
+    arithmetic). Conceptual, rule, adversarial, and intermediate tasks are
+    excluded because their depth does not correspond to increasing difficulty
+    in the same monotonic way.
+
     Returns
     -------
     A            Pre-factor  (model accuracy extrapolated to depth 1)
@@ -45,15 +82,26 @@ def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
     r2           Coefficient of determination
     interpretation  Human-readable sentence
     data         Per-depth {depth, accuracy, fitted} list for plotting
+    families     The families included in the fit
     """
-    depths = sorted(report.accuracy_by_depth.keys())
-    accs = [report.accuracy_by_depth[d]["accuracy"] for d in depths]
+    chain = _chain_results(report)
+    if not chain:
+        return {
+            "A": None, "alpha": None, "r2": None, "data": [],
+            "families": sorted(_CHAIN_FAMILIES),
+            "note": "No chain-family results found.",
+        }
+
+    depth_stats = _depth_stats_from_results(chain)
+    depths = sorted(depth_stats.keys())
+    accs = [depth_stats[d]["accuracy"] for d in depths]
 
     # Need depth > 0 and accuracy > 0 for log transform
     pairs = [(d, a) for d, a in zip(depths, accs) if d > 0 and a > 0]
     if len(pairs) < 2:
         return {
             "A": None, "alpha": None, "r2": None, "data": [],
+            "families": sorted(_CHAIN_FAMILIES),
             "note": "Insufficient data for fit (need >= 2 depths with non-zero accuracy).",
         }
 
@@ -69,6 +117,7 @@ def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
     if ss_xx == 0:
         return {
             "A": None, "alpha": None, "r2": None, "data": [],
+            "families": sorted(_CHAIN_FAMILIES),
             "note": "Zero variance in depths; cannot fit.",
         }
 
@@ -100,6 +149,7 @@ def fit_scaling_law(report: EvalReport) -> Dict[str, Any]:
             f"acc(d) ~= {A:.3f} * d^(-{alpha:.3f}).  "
             f"Each doubling of depth reduces accuracy by ~{halving_drop:.1f}%."
         ),
+        "families": sorted(_CHAIN_FAMILIES),
         "data": data,
     }
 
@@ -115,9 +165,13 @@ def find_phase_transition(report: EvalReport) -> Dict[str, Any]:
       first_sub50_depth      - first depth where accuracy < 50 %
 
     critical_depth = minimum of the two (earliest warning).
+
+    Operates on chain families only (same rationale as fit_scaling_law).
     """
-    depths = sorted(report.accuracy_by_depth.keys())
-    accs = {d: report.accuracy_by_depth[d]["accuracy"] for d in depths}
+    chain = _chain_results(report)
+    depth_stats = _depth_stats_from_results(chain)
+    depths = sorted(depth_stats.keys())
+    accs = {d: depth_stats[d]["accuracy"] for d in depths}
 
     if len(depths) < 2:
         return {"critical_depth": None, "note": "Need at least 2 depth levels."}
@@ -180,7 +234,8 @@ def _classify_error(result: EvalResult) -> str:
     off_by_one          Numeric answer differs from ground truth by exactly 1.
     inverse_confusion   Model returns the additive inverse of the correct answer
                         (a + resp ~= 0 mod something).
-    commutativity_swap  Error on an adversarial/commutativity-trap task.
+    adversarial_trap    Error on any adversarial-dimension task (double_inverse,
+                        self_cancelling, identity_bait, commutativity_trap).
     identity_confusion  Model answers with an identity-like token (0, 1, "e").
     hallucination       Response contains refusal or nonsense tokens.
     other               Numeric error >= 2 or structurally unclassifiable.
@@ -203,10 +258,8 @@ def _classify_error(result: EvalResult) -> str:
     if resp.lower() in ("0", "1", "e", "identity", "(0)", "(1)"):
         return "identity_confusion"
 
-    dim_val = result.dimension
-    adv_val = CompositionDimension.ADVERSARIAL.value
-    if dim_val == adv_val:
-        return "commutativity_swap"
+    if result.dimension == CompositionDimension.ADVERSARIAL.value:
+        return "adversarial_trap"
 
     return "other"
 
@@ -258,11 +311,14 @@ def hallucination_onset(report: EvalReport, threshold: float = 0.15) -> Dict[str
     The onset depth is the first depth where the hallucination fraction
     (wrong-and-hallucinated / total-at-depth) exceeds *threshold*.
 
+    Operates on chain families only, since conceptual and rule tasks at
+    depth=1 have a different hallucination pattern than chain tasks.
+
     Returns onset_depth, per-depth curve, and a plain-language note.
     """
     by_depth: Dict[int, Dict[str, int]] = defaultdict(lambda: {"total": 0, "hall": 0})
 
-    for r in report.results:
+    for r in _chain_results(report):
         by_depth[r.depth]["total"] += 1
         if not r.correct and _HALLUCINATION_RE.search(r.model_response):
             by_depth[r.depth]["hall"] += 1
