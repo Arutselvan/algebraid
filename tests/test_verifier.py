@@ -15,6 +15,7 @@ from algebraid.tasks.verifier import (
     check_answer,
     _extract_binary_answer,
     _extract_multiple_choice,
+    _strip_think_blocks,
 )
 
 
@@ -236,13 +237,22 @@ class TestCheckAnswer:
     def test_boxed_correct(self):
         assert check_answer("\\boxed{5}", "5") is True
 
-    # Substring match (non-strict)
-    def test_substring_match(self):
-        assert check_answer("the value is 5 in the group", "5") is True
+    # Substring match (non-strict) — only fires when len(truth) >= 3
+    def test_substring_match_long_truth(self):
+        assert check_answer("the result in Z_3 x Z_4 is (2, 3) as computed", "(2, 3)") is True
+
+    def test_substring_no_false_positive_digit(self):
+        # truth "5" (len 1) must NOT match inside "15" or in irrelevant prose
+        assert check_answer("15", "5") is False
+
+    def test_substring_no_false_positive_in_tuple(self):
+        # truth "3" must not match inside "(1, 3)" when the actual answer is "3"
+        # extract_answer("(1, 3)") returns "(1, 3)", not "3" — should be False
+        assert check_answer("(1, 3)", "3") is False
 
     # Strict mode
     def test_strict_no_substring(self):
-        assert check_answer("the value is 5 in the group", "5", strict=True) is False
+        assert check_answer("the result is (2, 3) as computed", "(2, 3)", strict=True) is False
 
     def test_strict_exact(self):
         assert check_answer("5", "5", strict=True) is True
@@ -257,3 +267,86 @@ class TestCheckAnswer:
 
     def test_quaternion_element_neg_k(self):
         assert check_answer("-k", "-k") is True
+
+
+# ── Reasoning-model robustness ────────────────────────────────────────────────
+
+class TestStripThinkBlocks:
+    def test_strips_think_block(self):
+        text = "<think>\nLet me reason step by step.\n2 + 3 = 5\n</think>\n\n5"
+        assert _strip_think_blocks(text) == "5"
+
+    def test_no_think_block_unchanged(self):
+        assert _strip_think_blocks("The answer is 5") == "The answer is 5"
+
+    def test_case_insensitive(self):
+        assert _strip_think_blocks("<THINK>ignore</THINK>\n3") == "3"
+
+    def test_multiline_think_block(self):
+        text = "<think>\nstep 1: ...\nstep 2: ...\n</think>\n(2, 3)"
+        assert _strip_think_blocks(text) == "(2, 3)"
+
+
+class TestReasoningModelExtraction:
+    def test_boxed_takes_last_not_first(self):
+        """Reasoning model writes wrong boxed value then corrects itself."""
+        response = (
+            "Let me try: \\boxed{3}. Wait, I made an error. "
+            "Recalculating: \\boxed{5}."
+        )
+        assert extract_answer(response) == "5"
+
+    def test_answer_tag_takes_last(self):
+        response = "<answer>3</answer> Wait no. <answer>5</answer>"
+        assert extract_answer(response) == "5"
+
+    def test_answer_tag_basic(self):
+        response = "After reasoning...\n<answer>(2, 3)</answer>"
+        assert extract_answer(response) == "(2, 3)"
+
+    def test_think_block_does_not_pollute_last_line(self):
+        """Without stripping, the last line inside <think> could be grabbed."""
+        response = "<think>\nintermediate = 99\n</think>\n\nThe answer is 5."
+        assert extract_answer(response) == "5"
+
+    def test_mc_takes_last_answer_mention(self):
+        """Model eliminates option B before choosing C."""
+        response = "Option B looks tempting here... but on reflection the answer is C."
+        assert extract_answer(response) == "c"
+
+    def test_binary_takes_last_answer_mention(self):
+        """Model says 'yes' mid-reasoning then corrects to 'no'."""
+        response = (
+            "At first glance the answer is yes, but checking associativity "
+            "reveals a failure. The final answer is no."
+        )
+        assert extract_answer(response) == "no"
+
+    def test_answer_is_pattern_takes_last(self):
+        """extract_answer should use the last 'answer is X' phrase."""
+        response = "The answer is 3.\nWait, let me recheck.\nThe answer is 5."
+        assert extract_answer(response) == "5"
+
+    def test_think_block_then_boxed(self):
+        response = "<think>\n2+2=4, so \\boxed{4}\n</think>\n\\boxed{5}"
+        assert extract_answer(response) == "5"
+
+
+class TestSubstringFalsePositives:
+    def test_single_digit_not_matched_in_larger_number(self):
+        assert check_answer("13", "3") is False
+
+    def test_single_digit_not_matched_in_tuple(self):
+        # "(2, 3)" contains "3" but truth="3" should not match "(2, 3)"
+        assert check_answer("(2, 3)", "3") is False
+
+    def test_two_char_truth_not_matched_via_substring(self):
+        # truth "13" (len=2 < 3) requires exact match
+        assert check_answer("the result is 130", "13") is False
+
+    def test_three_char_truth_matches_with_word_boundary(self):
+        assert check_answer("the answer is (2, 3) computed above", "(2, 3)") is True
+
+    def test_no_word_boundary_false_positive(self):
+        # truth "123" must not match inside "1234"
+        assert check_answer("1234", "123") is False

@@ -5,10 +5,23 @@ Handles multiple equivalent representations of algebraic elements
 (e.g. ``(1 2 3)`` vs ``(1, 2, 3)``) and extracts answers from common
 model output formats including LaTeX ``\\boxed{}``, Yes/No binary
 answers, and multiple-choice letters (A/B/C/D).
+
+Reasoning-model robustness notes
+---------------------------------
+* ``<think>...</think>`` blocks are stripped before any extraction so that
+  chain-of-thought text does not pollute the last-line fallback.
+* ``<answer>...</answer>`` tags are checked first (higher priority than boxed).
+* ``\\boxed{}`` takes the **last** match — a reasoning model may write wrong
+  intermediate boxed values before correcting itself.
+* The "answer/option/choice is X" patterns also take the **last** match for
+  the same reason.
+* The ``truth in extracted`` substring check requires ``len(truth) >= 3`` and
+  word-boundary isolation to prevent single-digit false positives (e.g. truth
+  ``"3"`` must not match inside extracted ``"13"``).
 """
 
 import re
-from typing import Any, Optional
+from typing import Optional
 
 
 def normalize_answer(answer: str) -> str:
@@ -22,23 +35,35 @@ def normalize_answer(answer: str) -> str:
     return s
 
 
+def _strip_think_blocks(text: str) -> str:
+    """Remove <think>...</think> reasoning scratchpad blocks.
+
+    DeepSeek-R1, QwQ, and similar models wrap chain-of-thought in these
+    tags; the final answer appears after the closing tag.
+    """
+    return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+
 def _extract_binary_answer(text: str) -> Optional[str]:
     """Return 'yes' or 'no' if the response unambiguously states one.
 
     Matches standalone True/False as well, mapping both to yes/no.
     Returns None if no clear binary answer is found.
+
+    Takes the **last** occurrence of "answer/result is yes/no" so that a
+    model that reconsiders mid-reasoning is scored on its final conclusion.
     """
     t = text.strip().lower()
     # Exact single-token answer
     if t in ("yes", "no", "true", "false"):
         return "yes" if t in ("yes", "true") else "no"
-    # "the answer is yes/no/true/false" anywhere in the text
-    m = re.search(
+    # "the answer is yes/no/true/false" — take LAST match
+    matches = re.findall(
         r'(?:the\s+)?(?:final\s+)?(?:answer|result)\s*(?:is\s*)?[:\s]*\b(yes|no|true|false)\b',
         t,
     )
-    if m:
-        val = m.group(1)
+    if matches:
+        val = matches[-1]
         return "yes" if val in ("yes", "true") else "no"
     # Standalone word at the very start (e.g. "Yes, because...")
     m = re.match(r'^(yes|no|true|false)\b', t)
@@ -52,15 +77,18 @@ def _extract_multiple_choice(text: str) -> Optional[str]:
     """Return the selected letter (a/b/c/d) if clearly indicated.
 
     Returns None if no clear single-letter choice is found.
+
+    Takes the **last** "answer/option/choice is X" occurrence so that a
+    model that eliminates options before selecting one is scored correctly.
     """
     t = text.strip().lower()
-    # "answer is B" / "option B" / "choice B" / "answer: B"
-    m = re.search(
+    # "answer is B" / "option B" / "choice B" / "answer: B" — take LAST match
+    matches = re.findall(
         r'\b(?:answer|option|choice)\s*(?:is\s*)?[:\s]*[(\[]?([abcd])[)\]]?',
         t,
     )
-    if m:
-        return m.group(1)
+    if matches:
+        return matches[-1]
     # "(B)" or "[B]" or "B." as a standalone token
     m = re.search(r'[(\[]([abcd])[)\]][.:\s]', t)
     if m:
@@ -78,12 +106,19 @@ def _extract_multiple_choice(text: str) -> Optional[str]:
 
 def extract_answer(response: str) -> str:
     """Extract the final answer from a model's response."""
-    text: str = response.strip()
+    # Strip reasoning scratchpad blocks before any extraction
+    text: str = _strip_think_blocks(response.strip())
 
-    # Check for \\boxed{...}
-    boxed_match = re.search(r'\\boxed\{([^}]+)\}', text)
-    if boxed_match:
-        return normalize_answer(boxed_match.group(1))
+    # Check for <answer>...</answer> tags (some instruction-tuned models)
+    answer_tags = re.findall(r'<answer>\s*(.+?)\s*</answer>', text, re.IGNORECASE | re.DOTALL)
+    if answer_tags:
+        return normalize_answer(answer_tags[-1])
+
+    # Check for \\boxed{...} — take LAST occurrence (reasoning models may
+    # write wrong intermediate values before correcting themselves)
+    boxed_matches = re.findall(r'\\boxed\{([^}]+)\}', text)
+    if boxed_matches:
+        return normalize_answer(boxed_matches[-1])
 
     # Check for "Final Answer: X" (explicit format hint from prompt)
     final_matches = re.findall(r'final\s+answer\s*:\s*(.+)', text, re.IGNORECASE)
@@ -106,13 +141,13 @@ def extract_answer(response: str) -> str:
     if mc is not None:
         return mc
 
-    # Check for "the answer is X" or "the result is X"
-    answer_match = re.search(
+    # Check for "the answer is X" or "the result is X" — take LAST match
+    answer_matches = re.findall(
         r'(?:the\s+)?(?:final\s+)?(?:answer|result)\s*(?:is|=)\s*(.+)',
-        text, re.IGNORECASE
+        text, re.IGNORECASE,
     )
-    if answer_match:
-        return normalize_answer(answer_match.group(1).split("\n")[0])
+    if answer_matches:
+        return normalize_answer(answer_matches[-1].split("\n")[0])
 
     # Check for "= X" at the end
     equals_match = re.search(r'=\s*(.+?)\.?\s*$', text, re.MULTILINE)
@@ -147,9 +182,12 @@ def check_answer(
     if extracted == truth:
         return True
 
-    # Check if truth is contained in extracted (non-strict mode)
-    if not strict and truth in extracted:
-        return True
+    # Substring containment (non-strict mode).
+    # Guard: require len >= 3 AND word-boundary isolation to prevent
+    # single-digit false positives like truth="3" matching inside "13".
+    if not strict and len(truth) >= 3:
+        if re.search(r'(?<!\w)' + re.escape(truth) + r'(?!\w)', extracted):
+            return True
 
     # Numeric comparison
     try:
