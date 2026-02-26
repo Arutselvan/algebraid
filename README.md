@@ -13,7 +13,7 @@ ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks buil
 | Property | Detail |
 |---|---|
 | **Correct by construction** | All answers derived by computation, not annotation |
-| **Independently verified** | Proof engine re-derives every answer from the solution trace |
+| **Independently verified** | Proof engine re-derives answers for all chain tasks (intra, adversarial, intermediate) from the solution trace; other families are verified by construction |
 | **Non-memorisable** | Unlimited procedural variation; no fixed test set |
 | **Reproducible** | Same seed -> same task set |
 | **Multi-dimensional** | 7 generator families (5 task family labels) x 7 compositional dimensions x 4 complexity metrics |
@@ -137,7 +137,7 @@ Every task carries four algebraic complexity scores computed independently of th
 
 | Metric | Symbol | Measures |
 |---|---|---|
-| Algebraic Entropy | H_alg | log_2(\|G\|) x depth: information required to specify the result |
+| Algebraic Entropy | H_alg | log_2(\|G\|) x depth (intra); log_2(∑\|G_i\|) (inter); 0 (conceptual) |
 | Commutativity Distance | D_comm | Fraction of consecutive operation pairs where operand order matters |
 | Orbit Complexity | O_c | Distinct intermediate values / \|G\|: breadth of element traversal |
 | Structural Interference | I_s | Coprimality-based interference between direct product components |
@@ -225,6 +225,9 @@ tests/
     test_verbalizer.py  Prompt generation and skin integration tests
     test_verifier.py    Answer extraction and checking tests
     test_skins.py       Semantic skin coverage tests
+    test_evaluator.py   EvalReport scoring and ceiling tests
+    test_analysis.py    Scaling law, phase transition, error taxonomy tests
+    test_splits.py      Train/test split strategy tests
 ```
 
 ---
