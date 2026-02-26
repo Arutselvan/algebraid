@@ -16,7 +16,7 @@ ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks buil
 | **Independently verified** | Proof engine re-derives every answer from the solution trace |
 | **Non-memorisable** | Unlimited procedural variation; no fixed test set |
 | **Reproducible** | Same seed -> same task set |
-| **Multi-dimensional** | 5 task families x 7 compositional dimensions x 4 complexity metrics |
+| **Multi-dimensional** | 7 generator families (5 task family labels) x 7 compositional dimensions x 4 complexity metrics |
 
 ## Install
 
@@ -161,6 +161,7 @@ from algebraid import (
 )
 
 # Generate
+# API defaults: depths=[1,2,3,4,5], tasks_per_depth=10, families=all seven
 gen = AlgebraidGenerator(seed=42)
 task_set = gen.generate(
     depths=[1, 2, 3, 4],
