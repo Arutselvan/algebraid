@@ -6,7 +6,7 @@
 
 ---
 
-ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks built on five algebraic structures. Every answer is derived by algebraic construction and independently re-derived by a proof engine that operates from the solution trace alone. Tasks are seed-deterministic: the same seed always produces the same task set.
+ALGEBRAID generates an unlimited, non-memorisable supply of reasoning tasks built on five algebraic structures. Every answer is derived by algebraic construction; chain-computation answers (intra-structure, adversarial, intermediate) are additionally re-derived by an independent proof engine from the solution trace. Other families (inter-structure, conceptual, rule induction) are verified by construction rather than by trace. Tasks are seed-deterministic: the same seed always produces the same task set.
 
 ## Key Properties
 
