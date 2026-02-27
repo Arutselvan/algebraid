@@ -355,7 +355,7 @@ class Verbalizer:
         lines.append(f"Start: {x_str}")
         for i in range(1, depth + 1):
             lines.append(f"Step {i}: ___")
-        lines.append("Final Answer: ___")
+        lines.append("Final Answer: \\boxed{}")
         return "\n".join(lines)
 
     def _format_hint_intermediate(self, total: int, k: int, x_str: str) -> str:
@@ -366,18 +366,18 @@ class Verbalizer:
             lines.append(f"Step {i}: ___")
         if k < total:
             lines.append(f"(Do not continue past step {k}.)")
-        lines.append("Final Answer: ___")
+        lines.append("Final Answer: \\boxed{}")
         return "\n".join(lines)
 
     def _format_hint_simple(self, answer_type: str) -> str:
         """Single-line answer format hint for non-chain tasks."""
         placeholders = {
-            "integer": "[integer]",
-            "element": "[element]",
-            "yes_no": "Yes or No",
-            "tuple": "[tuple]",
+            "integer": "\\boxed{integer}",
+            "element": "\\boxed{element}",
+            "yes_no": "Yes or No",          # binary: box notation is unnatural
+            "tuple": "\\boxed{(a, b)}",
         }
-        ph = placeholders.get(answer_type, "[answer]")
+        ph = placeholders.get(answer_type, "\\boxed{answer}")
         return f"Final Answer: {ph}"
 
     def verbalize_intra(

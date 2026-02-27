@@ -72,7 +72,7 @@ class TestVerbalizeIntra:
         x = z7.random_element(rng)
         prompt = verbalizer.verbalize_intra(z7, chain, x)
         import re
-        assert not re.search(r'\{[a-z_]+\}', prompt), "Unresolved template placeholder found"
+        assert not re.search(r'(?<!\\boxed)\{[a-z_]+\}', prompt), "Unresolved template placeholder found"
 
     def test_with_skin(self, verbalizer, z7, rng):
         from algebraid.skins import SKIN_REGISTRY
@@ -158,7 +158,7 @@ class TestVerbalizeConceptual:
         import re
         for subtype in ["identity", "inverse_of", "is_abelian", "structure_order"]:
             prompt = verbalizer.verbalize_conceptual(z7, subtype, x=3, a=1, b=2)
-            assert not re.search(r'\{[a-zA-Z_]+\}', prompt), (
+            assert not re.search(r'(?<!\\boxed)\{[a-zA-Z_]+\}', prompt), (
                 f"Unresolved placeholder in {subtype} prompt: {prompt}"
             )
 
