@@ -133,7 +133,8 @@ class TaskValidator:
                 break  # one error per task is sufficient
 
         # Detect unresolved template variables (e.g. {op_name}).
-        unresolved = re.findall(r"\{[a-z_]+\}", prompt)
+        # Exclude \boxed{...} format hints that the verbalizer intentionally emits.
+        unresolved = re.findall(r"(?<!\\boxed)\{[a-z_]+\}", prompt)
         if unresolved:
             r.error(f"Unresolved template variables: {unresolved}.")
 

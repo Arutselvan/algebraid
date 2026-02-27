@@ -15,7 +15,7 @@ from .complexity import (
 from .proof import verify_task, verify_set, print_proof_report, ProofResult
 from .analysis import (
     fit_scaling_law, fit_scaling_law_by_family,
-    find_phase_transition, error_taxonomy,
+    find_phase_transition,
     hallucination_onset, stability_breakdown, run_analysis, print_analysis,
 )
 from .splits import (
@@ -53,7 +53,6 @@ __all__: list = [
     "fit_scaling_law",
     "fit_scaling_law_by_family",
     "find_phase_transition",
-    "error_taxonomy",
     "hallucination_onset",
     "stability_breakdown",
     "run_analysis",

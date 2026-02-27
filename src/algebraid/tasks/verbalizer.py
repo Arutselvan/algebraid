@@ -25,7 +25,7 @@ STRUCTURE_ALIASES: List[str] = [
 ]
 
 ELEMENT_LABEL_POOLS: Dict[str, List[str]] = {
-    "greek": list("alphaβγδεζηθικλμνξοπρστυφχψω"),
+    "greek": list("αβγδεζηθικλμνξοπρστυφχψω"),
     "emoji_safe": [f"e{i}" for i in range(30)],
     "colors": [
         "red", "blue", "green", "yellow", "purple", "orange", "cyan",

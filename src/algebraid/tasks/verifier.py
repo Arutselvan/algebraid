@@ -25,6 +25,7 @@ Reasoning-model robustness notes
   verbose or wraps the value in extra prose.
 """
 
+import ast
 import re
 from typing import Optional
 
@@ -267,7 +268,7 @@ def _parse_tuple(s: str) -> Optional[tuple]:
     if not s:
         return None
     try:
-        result = eval(s, {"__builtins__": {}}, {})
+        result = ast.literal_eval(s)
         if isinstance(result, tuple):
             return result
     except Exception:

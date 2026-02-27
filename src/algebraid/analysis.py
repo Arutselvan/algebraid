@@ -1,14 +1,12 @@
 """
 Error analysis suite for ALGEBRAID evaluation results.
 
-Six structured analyses are available via run_analysis():
+Five structured analyses are available via run_analysis():
 
   accuracy_by_depth       Per-depth accuracy curve (chain families) + per-family breakdown
   accuracy_by_family      Flat per-family accuracy across all task families
   accuracy_by_dimension   Flat per-dimension accuracy across all compositional dimensions
   complexity_analysis     Algebraic complexity metrics by depth + per-task vs accuracy
-  error_taxonomy          Mechanistic failure-mode classification (five specific categories,
-                          no catch-all "other")
   hallucination_onset     Depth at which hallucination/refusal rate first exceeds threshold
 
 Standalone advanced functions (not in run_analysis output):
@@ -283,7 +281,7 @@ def find_phase_transition(report: EvalReport) -> Dict[str, Any]:
     }
 
 
-# -- 1. Error Taxonomy ---------------------------------------------------------
+# -- 1. Hallucination Onset / Error helpers ------------------------------------
 
 _HALLUCINATION_RE = re.compile(
     r"cannot|undefined|infinity|idk|unknown|impossible|not defined|n/a|none|sorry|don.t know",
@@ -302,92 +300,23 @@ def _to_num(s: str) -> Optional[float]:
 
 
 def _classify_error(result: EvalResult) -> str:
-    """
-    Classify a single wrong answer into a mechanistic failure mode.
-
-    Categories
-    ----------
-    adversarial_trap    Error on any adversarial-dimension task (double_inverse,
-                        self_cancelling, identity_bait, commutativity_trap).
-    hallucination       Response contains refusal or nonsense tokens.
-    off_by_one          Numeric answer differs from ground truth by exactly 1.
-    inverse_confusion   Model returns the additive inverse of the correct answer.
-    identity_confusion  Model answers with an identity-like token (0, 1, "e").
-    wrong_value         Any other structured but incorrect response.
-    """
+    """Classify a wrong answer into a broad failure mode (used by complexity_analysis)."""
     resp = result.model_response.strip()
-
     if _HALLUCINATION_RE.search(resp):
         return "hallucination"
-
-    # Adversarial-dimension errors are always labelled adversarial_trap regardless
-    # of the numeric diff, since the whole point is to track trap-specific failures.
     if result.dimension == CompositionDimension.ADVERSARIAL.value:
         return "adversarial_trap"
-
-    # Skip numeric comparison for tuple answers (permutation/dihedral elements).
-    # _to_num would parse "(2, 1, 3)" as 2 and "(1, 2, 3)" as 1, giving a
-    # spurious diff=1 "off_by_one" classification for any permutation error.
     is_tuple_answer = result.ground_truth.strip().startswith("(")
-
     resp_num = None if is_tuple_answer else _to_num(resp)
     gt_num = None if is_tuple_answer else _to_num(result.ground_truth)
-
     if resp_num is not None and gt_num is not None:
-        diff = abs(resp_num - gt_num)
-        if diff == 1:
+        if abs(resp_num - gt_num) == 1:
             return "off_by_one"
         if resp_num != 0 and abs(resp_num + gt_num) <= 1:
             return "inverse_confusion"
-
     if resp.lower() in ("0", "1", "e", "identity", "(0)", "(1)"):
         return "identity_confusion"
-
     return "wrong_value"
-
-
-def error_taxonomy(report: EvalReport) -> Dict[str, Any]:
-    """
-    Classify every incorrect prediction into a mechanistic failure mode.
-
-    Returns
-    -------
-    total_errors   Total number of wrong predictions
-    categories     {category: {count, pct}} sorted by frequency
-    by_depth       {depth: {category: count}}
-    by_family      {family: {category: count}}
-    dominant_error The most common failure mode
-    """
-    wrong = [r for r in report.results if not r.correct]
-    if not wrong:
-        return {
-            "total_errors": 0, "categories": {}, "by_depth": {},
-            "by_family": {}, "dominant_error": None,
-        }
-
-    counts: Dict[str, int] = defaultdict(int)
-    by_depth: Dict[int, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    by_family: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
-
-    for r in wrong:
-        cat = _classify_error(r)
-        counts[cat] += 1
-        by_depth[r.depth][cat] += 1
-        by_family[r.family][cat] += 1
-
-    total = len(wrong)
-    categories = {
-        cat: {"count": cnt, "pct": round(cnt / total * 100, 1)}
-        for cat, cnt in sorted(counts.items(), key=lambda x: -x[1])
-    }
-
-    return {
-        "total_errors": total,
-        "categories": categories,
-        "by_depth": {d: dict(cats) for d, cats in sorted(by_depth.items())},
-        "by_family": {f: dict(cats) for f, cats in sorted(by_family.items())},
-        "dominant_error": max(counts, key=counts.__getitem__) if counts else None,
-    }
 
 
 # -- 2. Hallucination Onset ----------------------------------------------------
@@ -446,9 +375,8 @@ def accuracy_by_depth(report: EvalReport) -> Dict[str, Any]:
     Returns a dict with two keys:
 
     curve
-        List of {depth, accuracy, correct, total, errors_by_category} for each
-        depth level in chain families (intra, inter, field), excluding adversarial
-        and intermediate dimensions.
+        List of {depth, accuracy, correct, total} for each depth level in chain
+        families (intra, inter, field), excluding adversarial and intermediate dimensions.
 
     by_family
         {family: [{depth, accuracy, correct, total}, ...]} — the same chain-family
@@ -456,7 +384,6 @@ def accuracy_by_depth(report: EvalReport) -> Dict[str, Any]:
     """
     chain = _chain_results(report)
     chain_stats = _depth_stats_from_results(chain)
-    by_depth_errors = error_taxonomy(report).get("by_depth", {})
 
     curve = [
         {
@@ -464,7 +391,6 @@ def accuracy_by_depth(report: EvalReport) -> Dict[str, Any]:
             "accuracy": round(d["accuracy"], 4),
             "correct": d["correct"],
             "total": d["total"],
-            "errors_by_category": by_depth_errors.get(depth, {}),
         }
         for depth, d in sorted(chain_stats.items())
     ]
@@ -647,6 +573,7 @@ def run_analysis(report: EvalReport) -> Dict[str, Any]:
       complexity_analysis   Complexity metrics by depth + per-task vs accuracy
       hallucination_onset   Depth-resolved hallucination rate curve
 
+
     Scaling law, phase transition are available as standalone advanced functions
     (fit_scaling_law, fit_scaling_law_by_family, find_phase_transition) — they
     require many depth levels to be reliable.
@@ -691,17 +618,6 @@ def print_analysis(analysis: Dict[str, Any]) -> None:
     print(f"  Task Set : {analysis['task_set']}")
     print(f"  Overall  : {analysis['overall_accuracy']:.1%}")
     print(sep)
-
-    # Error taxonomy
-    tax = analysis.get("error_taxonomy", {})
-    if tax.get("total_errors", 0) > 0:
-        print(f"\n  Error Taxonomy ({tax['total_errors']} wrong predictions):")
-        for cat, info in tax["categories"].items():
-            bar = "#" * int(info["pct"] / 5)
-            print(f"    {cat:<25} {info['count']:>4}  ({info['pct']:>5.1f}%)  {bar}")
-        print(f"    Dominant: {tax['dominant_error']}")
-    else:
-        print(f"\n  Error Taxonomy: no errors (perfect accuracy).")
 
     # Accuracy by family
     by_fam = analysis.get("accuracy_by_family", {})

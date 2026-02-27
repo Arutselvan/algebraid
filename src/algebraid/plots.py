@@ -293,44 +293,7 @@ def _accuracy_by_dimension(analysis: Dict[str, Any], out_dir: str) -> Optional[s
     return path
 
 
-# ── Figure 4: error taxonomy bar chart ───────────────────────────────────────
-
-def _error_taxonomy_chart(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
-    import matplotlib.pyplot as plt
-
-    tax = analysis.get("error_taxonomy", {})
-    categories = tax.get("categories", {})
-    if not categories:
-        return None
-
-    cats   = list(categories.keys())[::-1]
-    pcts   = [categories[c]["pct"]   for c in cats]
-    counts = [categories[c]["count"] for c in cats]
-    total  = tax.get("total_errors", sum(counts))
-    colors = [_ERROR_PALETTE.get(c, "#2563EB") for c in cats]
-
-    fig, ax = plt.subplots(figsize=(7, max(3.0, len(cats) * 0.85 + 1.2)))
-    bars = ax.barh(cats, pcts, color=colors, edgecolor="white", height=0.6)
-
-    for bar, cnt, pct in zip(bars, counts, pcts):
-        ax.text(bar.get_width() + 0.5, bar.get_y() + bar.get_height() / 2,
-                f"{cnt}  ({pct:.1f}%)", va="center", ha="left", fontsize=9)
-
-    ax.set_xlabel("Percentage of errors (%)", fontsize=11)
-    ax.set_title(f"Error Taxonomy  ({total} wrong predictions)", fontsize=12)
-    ax.set_xlim(0, max(pcts) * 1.38 if pcts else 100)
-    ax.grid(True, axis="x", alpha=0.3)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    fig.tight_layout()
-
-    path = os.path.join(out_dir, "error_taxonomy.png")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return path
-
-
-# ── Figure 5: two-panel stability curve ──────────────────────────────────────
+# ── Figure 4: two-panel stability curve ──────────────────────────────────────
 
 def _stability_curve(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
     import matplotlib.pyplot as plt

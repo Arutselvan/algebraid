@@ -5,8 +5,6 @@ Coverage:
   - fit_scaling_law: operates on chain families only; not contaminated by
     conceptual or rule tasks; returns correct keys
   - find_phase_transition: chain-only; identifies correct depth
-  - error_taxonomy: adversarial_trap label (not commutativity_swap);
-    tuple answers not miscategorised as off_by_one; no "other" catch-all
   - stability_breakdown: backward-compatible alias; accuracy values in valid
     range; required keys present
   - run_analysis: returns five structured analyses (accuracy_by_depth,
@@ -25,7 +23,6 @@ from algebraid.analysis import (
     fit_scaling_law,
     fit_scaling_law_by_family,
     find_phase_transition,
-    error_taxonomy,
     hallucination_onset,
     stability_breakdown,
     run_analysis,
@@ -232,62 +229,6 @@ class TestFindPhaseTransition:
         assert "note" in pt
 
 
-# ── error_taxonomy ─────────────────────────────────────────────────────────────
-
-class TestErrorTaxonomy:
-    def test_adversarial_trap_not_commutativity_swap(self):
-        """All adversarial-dimension errors should be 'adversarial_trap',
-        not 'commutativity_swap'."""
-        report = _make_report([
-            _make_result("t1", False, INTRA, dimension="adversarial",
-                         response="4", ground_truth="3"),
-        ])
-        tax = error_taxonomy(report)
-        assert "adversarial_trap" in tax["categories"]
-        assert "commutativity_swap" not in tax["categories"]
-
-    def test_tuple_answer_not_off_by_one(self):
-        """A permutation answer like '(2, 1, 3)' vs '(1, 2, 3)' is NOT off_by_one."""
-        report = _make_report([
-            _make_result("t1", False, INTRA,
-                         response="(2, 1, 3)", ground_truth="(1, 2, 3)"),
-        ])
-        tax = error_taxonomy(report)
-        assert "off_by_one" not in tax["categories"]
-
-    def test_numeric_off_by_one_classified(self):
-        report = _make_report([
-            _make_result("t1", False, INTRA, response="4", ground_truth="3"),
-        ])
-        tax = error_taxonomy(report)
-        assert "off_by_one" in tax["categories"]
-
-    def test_hallucination_classified(self):
-        report = _make_report([
-            _make_result("t1", False, INTRA, response="I don't know", ground_truth="3"),
-        ])
-        tax = error_taxonomy(report)
-        assert "hallucination" in tax["categories"]
-
-    def test_yes_no_wrong_classified_as_wrong_value(self):
-        """Wrong Yes/No conceptual answers should be 'wrong_value', not off_by_one."""
-        report = _make_report([
-            _make_result("t1", False, CONCEPTUAL, response="yes", ground_truth="no"),
-        ])
-        tax = error_taxonomy(report)
-        assert "wrong_value" in tax["categories"]
-        assert "off_by_one" not in tax["categories"]
-        assert "other" not in tax["categories"]
-
-    def test_no_errors_returns_empty(self):
-        report = _make_report([
-            _make_result("t1", True, INTRA, response="3", ground_truth="3"),
-        ])
-        tax = error_taxonomy(report)
-        assert tax["total_errors"] == 0
-        assert tax["dominant_error"] is None
-
-
 # ── stability_breakdown ────────────────────────────────────────────────────────
 
 class TestStabilityBreakdown:
@@ -330,7 +271,6 @@ class TestStabilityBreakdown:
             assert "accuracy" in row
             assert "correct" in row
             assert "total" in row
-            assert "errors_by_category" in row
 
 
 # ── run_analysis ───────────────────────────────────────────────────────────────
@@ -383,7 +323,6 @@ class TestRunAnalysis:
             assert "accuracy" in row
             assert "correct" in row
             assert "total" in row
-            assert "errors_by_category" in row
         # Each family entry must have per-depth rows with required keys
         for fam, rows in abd["by_family"].items():
             for row in rows:

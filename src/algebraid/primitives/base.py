@@ -68,17 +68,20 @@ class AlgebraicStructure(ABC):
 
     def op_chain(self, *args: Any) -> Any:
         """Apply the operation left-to-right across multiple elements."""
+        if not args:
+            raise ValueError("op_chain requires at least one argument")
         result = args[0]
         for a in args[1:]:
             result = self.op(result, a)
         return result
 
     def is_commutative(self) -> bool:
-        """Check if the operation is commutative (by sampling)."""
+        """Check if the operation is commutative (by deterministic sampling)."""
         elems: list[Any] = self.elements()
+        _rng = random.Random(0)
         for _ in range(min(20, len(elems) ** 2)):
-            a = random.choice(elems)
-            b = random.choice(elems)
+            a = _rng.choice(elems)
+            b = _rng.choice(elems)
             if self.op(a, b) != self.op(b, a):
                 return False
         return True
