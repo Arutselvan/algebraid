@@ -22,6 +22,7 @@ dependencies = []
 [project.optional-dependencies]
 openai = ["openai"]
 anthropic = ["anthropic"]
+openrouter = ["openai"]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
