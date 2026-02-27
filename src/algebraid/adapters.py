@@ -11,14 +11,27 @@ All provider SDKs are optional dependencies:
     openrouter   pip install -e '.[openai]'      OpenRouter (500+ models, one key).
     custom_http  pip install -e '.[openai]'      Any OpenAI-compatible endpoint.
     huggingface  Not yet implemented; use custom_http with a vLLM/TGI server.
+
+Checkpointing
+-------------
+``run_tasks`` accepts an optional ``checkpoint_path`` argument.  When set:
+
+* Existing predictions are loaded from that file at startup so a crashed
+  or interrupted run can be resumed without re-querying completed tasks.
+* Predictions are written to that file every ``checkpoint_every`` tasks
+  (default 10) and again at the end.
+
+The CLI passes the final output path as ``checkpoint_path`` automatically,
+so ``algebraid run`` and ``algebraid pipeline`` are both resume-safe.
 """
 
+import json
 import os
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 
-from .task_model import TaskSet
+from .task_model import Task, TaskSet
 
 
 class BaseAdapter(ABC):
@@ -31,20 +44,109 @@ class BaseAdapter(ABC):
         max_tokens: int,
         delay: float,
         verbose: bool,
+        checkpoint_every: int = 10,
     ) -> None:
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.delay = delay
         self.verbose = verbose
+        self.checkpoint_every = checkpoint_every
+
+    # ------------------------------------------------------------------
+    # Subclass interface — implement these two methods per provider
+    # ------------------------------------------------------------------
 
     @abstractmethod
-    def run_tasks(self, task_set: TaskSet) -> Dict[str, str]:
-        """Run all tasks and return ``{task_id: response_text}``."""
+    def _build_client(self) -> Any:
+        """Initialise and return the provider's API client object."""
 
-    def _log(self, i: int, total: int) -> None:
-        if self.verbose and (i + 1) % 10 == 0:
-            print(f"  [{i + 1}/{total}] completed")
+    @abstractmethod
+    def _call_single(self, client: Any, task: Task) -> str:
+        """Make one API call and return the response text."""
+
+    # ------------------------------------------------------------------
+    # Shared loop with checkpoint support
+    # ------------------------------------------------------------------
+
+    def run_tasks(
+        self,
+        task_set: TaskSet,
+        checkpoint_path: Optional[str] = None,
+    ) -> Dict[str, str]:
+        """Run all tasks and return ``{task_id: response_text}``.
+
+        Args:
+            task_set: The set of tasks to evaluate.
+            checkpoint_path: Optional path to a JSON file used as a
+                rolling checkpoint.  Existing entries are loaded and
+                skipped; new entries are flushed every
+                ``self.checkpoint_every`` completions.
+        """
+        # ── Resume from checkpoint ────────────────────────────────────
+        predictions: Dict[str, str] = {}
+        if checkpoint_path and os.path.exists(checkpoint_path):
+            try:
+                with open(checkpoint_path) as f:
+                    predictions = json.load(f)
+                if predictions and self.verbose:
+                    print(
+                        f"  Resuming from checkpoint: "
+                        f"{len(predictions)}/{len(task_set)} tasks already done."
+                    )
+            except (json.JSONDecodeError, OSError):
+                predictions = {}
+
+        pending = [t for t in task_set if t.task_id not in predictions]
+        total = len(task_set)
+
+        if not pending:
+            if self.verbose:
+                print("  All tasks already completed (loaded from checkpoint).")
+            return predictions
+
+        if self.verbose:
+            already = total - len(pending)
+            label = f"{self.model}"
+            print(
+                f"Running {len(pending)} task(s) on {label}"
+                + (f" ({already} skipped — already done)" if already else "")
+                + " ..."
+            )
+
+        client = self._build_client()
+
+        for i, task in enumerate(pending):
+            try:
+                predictions[task.task_id] = self._call_single(client, task)
+            except Exception as e:
+                print(f"  Error on {task.task_id}: {e}")
+                predictions[task.task_id] = "[ERROR]"
+
+            done = total - len(pending) + i + 1
+            if self.verbose and done % 10 == 0:
+                print(f"  [{done}/{total}] completed")
+
+            if checkpoint_path and (i + 1) % self.checkpoint_every == 0:
+                self._save_checkpoint(predictions, checkpoint_path)
+
+            if self.delay > 0:
+                time.sleep(self.delay)
+
+        if checkpoint_path:
+            self._save_checkpoint(predictions, checkpoint_path)
+
+        if self.verbose:
+            print(f"Done. {len(predictions)} predictions collected.")
+        return predictions
+
+    @staticmethod
+    def _save_checkpoint(predictions: Dict[str, str], path: str) -> None:
+        out_dir = os.path.dirname(path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(predictions, f, indent=2)
 
 
 class OpenAIAdapter(BaseAdapter):
@@ -54,7 +156,7 @@ class OpenAIAdapter(BaseAdapter):
     and the ``OPENAI_API_KEY`` environment variable.
     """
 
-    def run_tasks(self, task_set: TaskSet) -> Dict[str, str]:
+    def _build_client(self) -> Any:
         try:
             from openai import OpenAI
         except ImportError:
@@ -62,34 +164,16 @@ class OpenAIAdapter(BaseAdapter):
                 "The 'openai' package is required for this adapter. "
                 "Install it with: pip install -e '.[openai]'"
             ) from None
+        return OpenAI()
 
-        client = OpenAI()
-        predictions: Dict[str, str] = {}
-        total = len(task_set)
-
-        if self.verbose:
-            print(f"Running {total} tasks on OpenAI model: {self.model} ...")
-
-        for i, task in enumerate(task_set):
-            try:
-                resp = client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": task.prompt}],
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-                predictions[task.task_id] = resp.choices[0].message.content or ""
-            except Exception as e:
-                print(f"  Error on {task.task_id}: {e}")
-                predictions[task.task_id] = "[ERROR]"
-
-            self._log(i, total)
-            if self.delay > 0:
-                time.sleep(self.delay)
-
-        if self.verbose:
-            print(f"Done. {len(predictions)} predictions collected.")
-        return predictions
+    def _call_single(self, client: Any, task: Task) -> str:
+        resp = client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": task.prompt}],
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+        return resp.choices[0].message.content or ""
 
 
 class AnthropicAdapter(BaseAdapter):
@@ -100,7 +184,7 @@ class AnthropicAdapter(BaseAdapter):
     Example model identifiers: ``claude-sonnet-4-6``, ``claude-haiku-4-5-20251001``.
     """
 
-    def run_tasks(self, task_set: TaskSet) -> Dict[str, str]:
+    def _build_client(self) -> Any:
         try:
             from anthropic import Anthropic
         except ImportError:
@@ -108,99 +192,16 @@ class AnthropicAdapter(BaseAdapter):
                 "The 'anthropic' package is required for this adapter. "
                 "Install it with: pip install -e '.[anthropic]'"
             ) from None
+        return Anthropic()
 
-        client = Anthropic()
-        predictions: Dict[str, str] = {}
-        total = len(task_set)
-
-        if self.verbose:
-            print(f"Running {total} tasks on Anthropic model: {self.model} ...")
-
-        for i, task in enumerate(task_set):
-            try:
-                resp = client.messages.create(
-                    model=self.model,
-                    max_tokens=self.max_tokens,
-                    temperature=self.temperature,
-                    messages=[{"role": "user", "content": task.prompt}],
-                )
-                predictions[task.task_id] = resp.content[0].text
-            except Exception as e:
-                print(f"  Error on {task.task_id}: {e}")
-                predictions[task.task_id] = "[ERROR]"
-
-            self._log(i, total)
-            if self.delay > 0:
-                time.sleep(self.delay)
-
-        if self.verbose:
-            print(f"Done. {len(predictions)} predictions collected.")
-        return predictions
-
-
-class CustomHTTPAdapter(BaseAdapter):
-    """Adapter for any OpenAI-compatible HTTP endpoint.
-
-    Works with self-hosted servers such as vLLM, Ollama, LM Studio, or
-    any proxy that exposes the ``/v1/chat/completions`` endpoint.
-
-    The base URL is resolved in this order:
-      1. ``ALGEBRAID_API_BASE`` environment variable.
-      2. The ``base_url`` kwarg passed to the constructor (not exposed via CLI).
-      3. Falls back to ``http://localhost:11434/v1`` (Ollama default).
-
-    Requires the ``openai`` package (``pip install -e '.[openai]'``), used as
-    the HTTP client only - no OpenAI API key is needed for self-hosted servers.
-    Set ``OPENAI_API_KEY=none`` if the server does not require authentication.
-    """
-
-    def __init__(self, *args: Any, base_url: str = "", **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.base_url = (
-            base_url
-            or os.environ.get("ALGEBRAID_API_BASE", "")
-            or "http://localhost:11434/v1"
+    def _call_single(self, client: Any, task: Task) -> str:
+        resp = client.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            messages=[{"role": "user", "content": task.prompt}],
         )
-
-    def run_tasks(self, task_set: TaskSet) -> Dict[str, str]:
-        try:
-            from openai import OpenAI
-        except ImportError:
-            raise ImportError(
-                "The 'openai' package is required for the custom_http adapter. "
-                "Install it with: pip install -e '.[openai]'"
-            ) from None
-
-        client = OpenAI(
-            base_url=self.base_url,
-            api_key=os.environ.get("OPENAI_API_KEY", "none"),
-        )
-        predictions: Dict[str, str] = {}
-        total = len(task_set)
-
-        if self.verbose:
-            print(f"Running {total} tasks on {self.model} at {self.base_url} ...")
-
-        for i, task in enumerate(task_set):
-            try:
-                resp = client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": task.prompt}],
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-                predictions[task.task_id] = resp.choices[0].message.content or ""
-            except Exception as e:
-                print(f"  Error on {task.task_id}: {e}")
-                predictions[task.task_id] = "[ERROR]"
-
-            self._log(i, total)
-            if self.delay > 0:
-                time.sleep(self.delay)
-
-        if self.verbose:
-            print(f"Done. {len(predictions)} predictions collected.")
-        return predictions
+        return resp.content[0].text
 
 
 class OpenRouterAdapter(BaseAdapter):
@@ -240,7 +241,7 @@ class OpenRouterAdapter(BaseAdapter):
     _DEFAULT_SITE_URL = "https://github.com/Arutselvan/algebraid"
     _DEFAULT_SITE_NAME = "ALGEBRAID"
 
-    def run_tasks(self, task_set: TaskSet) -> Dict[str, str]:
+    def _build_client(self) -> Any:
         try:
             from openai import OpenAI
         except ImportError:
@@ -260,7 +261,7 @@ class OpenRouterAdapter(BaseAdapter):
         site_url = os.environ.get("OPENROUTER_SITE_URL", self._DEFAULT_SITE_URL)
         site_name = os.environ.get("OPENROUTER_SITE_NAME", self._DEFAULT_SITE_NAME)
 
-        client = OpenAI(
+        return OpenAI(
             base_url=self._OPENROUTER_BASE,
             api_key=api_key,
             default_headers={
@@ -269,43 +270,73 @@ class OpenRouterAdapter(BaseAdapter):
             },
         )
 
-        predictions: Dict[str, str] = {}
-        total = len(task_set)
+    def _call_single(self, client: Any, task: Task) -> str:
+        resp = client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": task.prompt}],
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+        msg = resp.choices[0].message
+        content: str = msg.content or ""
 
-        if self.verbose:
-            print(f"Running {total} tasks on OpenRouter model: {self.model} ...")
+        # Some reasoning models (e.g. deepseek/deepseek-r1) return the
+        # chain-of-thought in a separate `reasoning` field rather than
+        # inside <think> tags.  Wrap it so the verifier's
+        # _strip_think_blocks helper works uniformly.
+        reasoning: str = getattr(msg, "reasoning", None) or ""
+        if reasoning and "<think>" not in content.lower():
+            content = f"<think>\n{reasoning}\n</think>\n{content}"
 
-        for i, task in enumerate(task_set):
-            try:
-                resp = client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": task.prompt}],
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-                msg = resp.choices[0].message
-                content: str = msg.content or ""
+        return content
 
-                # Some reasoning models (e.g. deepseek/deepseek-r1) return the
-                # chain-of-thought in a separate `reasoning` field rather than
-                # inside <think> tags.  Wrap it so the verifier's
-                # _strip_think_blocks helper works uniformly.
-                reasoning: str = getattr(msg, "reasoning", None) or ""
-                if reasoning and "<think>" not in content.lower():
-                    content = f"<think>\n{reasoning}\n</think>\n{content}"
 
-                predictions[task.task_id] = content
-            except Exception as e:
-                print(f"  Error on {task.task_id}: {e}")
-                predictions[task.task_id] = "[ERROR]"
+class CustomHTTPAdapter(BaseAdapter):
+    """Adapter for any OpenAI-compatible HTTP endpoint.
 
-            self._log(i, total)
-            if self.delay > 0:
-                time.sleep(self.delay)
+    Works with self-hosted servers such as vLLM, Ollama, LM Studio, or
+    any proxy that exposes the ``/v1/chat/completions`` endpoint.
 
-        if self.verbose:
-            print(f"Done. {len(predictions)} predictions collected.")
-        return predictions
+    The base URL is resolved in this order:
+      1. ``ALGEBRAID_API_BASE`` environment variable.
+      2. The ``base_url`` kwarg passed to the constructor (not exposed via CLI).
+      3. Falls back to ``http://localhost:11434/v1`` (Ollama default).
+
+    Requires the ``openai`` package (``pip install -e '.[openai]'``), used as
+    the HTTP client only - no OpenAI API key is needed for self-hosted servers.
+    Set ``OPENAI_API_KEY=none`` if the server does not require authentication.
+    """
+
+    def __init__(self, *args: Any, base_url: str = "", **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.base_url = (
+            base_url
+            or os.environ.get("ALGEBRAID_API_BASE", "")
+            or "http://localhost:11434/v1"
+        )
+
+    def _build_client(self) -> Any:
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError(
+                "The 'openai' package is required for the custom_http adapter. "
+                "Install it with: pip install -e '.[openai]'"
+            ) from None
+
+        return OpenAI(
+            base_url=self.base_url,
+            api_key=os.environ.get("OPENAI_API_KEY", "none"),
+        )
+
+    def _call_single(self, client: Any, task: Task) -> str:
+        resp = client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": task.prompt}],
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+        return resp.choices[0].message.content or ""
 
 
 class HuggingFaceAdapter(BaseAdapter):
@@ -316,13 +347,16 @@ class HuggingFaceAdapter(BaseAdapter):
     at the resulting OpenAI-compatible endpoint instead.
     """
 
-    def run_tasks(self, task_set: TaskSet) -> Dict[str, str]:
+    def _build_client(self) -> Any:
         raise NotImplementedError(
             "HuggingFaceAdapter is not yet implemented. "
             "To evaluate a local HuggingFace model, serve it with vLLM or "
             "text-generation-inference and use --adapter custom_http with "
             "ALGEBRAID_API_BASE pointing at the server's /v1 endpoint."
         )
+
+    def _call_single(self, client: Any, task: Task) -> str:
+        raise NotImplementedError
 
 
 ADAPTER_MAP: Dict[str, type] = {

@@ -137,13 +137,16 @@ def _run(args: argparse.Namespace) -> None:
         verbose=not args.quiet,
     )
 
-    t0 = time.time()
-    predictions = adapter.run_tasks(task_set)
-    print(f"Completed in {time.time() - t0:.1f}s")
-
     out_dir = os.path.dirname(output)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
+
+    t0 = time.time()
+    predictions = adapter.run_tasks(task_set, checkpoint_path=output)
+    print(f"Completed in {time.time() - t0:.1f}s")
+
+    # Final write (adapter may have already written via checkpoint, but this
+    # ensures the file is present even when checkpointing is skipped).
     with open(output, "w") as f:
         json.dump(predictions, f, indent=2)
     print(f"Predictions saved to {output}")
@@ -222,12 +225,13 @@ def _pipeline(args: argparse.Namespace) -> None:
         delay=args.delay,
         verbose=not args.quiet,
     )
+    preds_path = os.path.join(run_dir, "predictions.json")
+
     t0 = time.time()
-    predictions = adapter.run_tasks(task_set)
+    predictions = adapter.run_tasks(task_set, checkpoint_path=preds_path)
     elapsed = time.time() - t0
     print(f"      Completed in {elapsed:.1f}s")
 
-    preds_path = os.path.join(run_dir, "predictions.json")
     with open(preds_path, "w") as f:
         json.dump(predictions, f, indent=2)
     print(f"      Saved -> predictions.json")
