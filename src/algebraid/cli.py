@@ -432,6 +432,14 @@ def _split(args: argparse.Namespace) -> None:
 # -- entry point --------------------------------------------------------------
 
 def main() -> None:
+    # Load .env file if present so API keys don't need to be exported manually.
+    # Silent no-op when python-dotenv is not installed.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     parser = argparse.ArgumentParser(
         prog="algebraid",
         description="ALGEBRAID: compositional algebraic reasoning benchmark.",

@@ -26,6 +26,7 @@ openrouter = ["openai"]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
+    "python-dotenv",
 ]
 
 [tool.pytest.ini_options]
