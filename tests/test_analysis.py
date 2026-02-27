@@ -6,10 +6,15 @@ Coverage:
     conceptual or rule tasks; returns correct keys
   - find_phase_transition: chain-only; identifies correct depth
   - error_taxonomy: adversarial_trap label (not commutativity_swap);
-    tuple answers not miscategorised as off_by_one
-  - hallucination_onset: chain-only
-  - stability_breakdown: accuracy and fitted values from same population
-  - run_analysis: returns all expected keys
+    tuple answers not miscategorised as off_by_one; no "other" catch-all
+  - stability_breakdown: backward-compatible alias; accuracy values in valid
+    range; required keys present
+  - run_analysis: returns five structured analyses (accuracy_by_depth,
+    accuracy_by_family, accuracy_by_dimension, complexity_analysis,
+    hallucination_onset)
+
+Note: fit_scaling_law, fit_scaling_law_by_family, and find_phase_transition
+are standalone advanced functions not included in run_analysis() output.
 """
 
 import pytest
@@ -264,14 +269,15 @@ class TestErrorTaxonomy:
         tax = error_taxonomy(report)
         assert "hallucination" in tax["categories"]
 
-    def test_yes_no_wrong_classified_as_other(self):
-        """Wrong Yes/No conceptual answers should be 'other', not miscategorised."""
+    def test_yes_no_wrong_classified_as_wrong_value(self):
+        """Wrong Yes/No conceptual answers should be 'wrong_value', not off_by_one."""
         report = _make_report([
             _make_result("t1", False, CONCEPTUAL, response="yes", ground_truth="no"),
         ])
         tax = error_taxonomy(report)
-        assert "other" in tax["categories"]
+        assert "wrong_value" in tax["categories"]
         assert "off_by_one" not in tax["categories"]
+        assert "other" not in tax["categories"]
 
     def test_no_errors_returns_empty(self):
         report = _make_report([
@@ -301,8 +307,8 @@ class TestStabilityBreakdown:
         # Chain-only accuracy at depth=1 is 0% (not inflated by the easy conceptual task)
         assert depth1["accuracy"] == 0.0
 
-    def test_fitted_and_accuracy_from_same_population(self):
-        """When fit succeeds, fitted values should be in plausible range."""
+    def test_accuracy_values_in_valid_range(self):
+        """Accuracy values returned by stability_breakdown must be in [0, 1]."""
         report = _make_report([
             _make_result("t1", True, INTRA, depth=1),
             _make_result("t2", True, INTRA, depth=1),
@@ -311,8 +317,7 @@ class TestStabilityBreakdown:
         ])
         curve = stability_breakdown(report)
         for row in curve:
-            if row["fitted_accuracy"] is not None:
-                assert 0.0 <= row["fitted_accuracy"] <= 1.0
+            assert 0.0 <= row["accuracy"] <= 1.0
 
     def test_returns_list_of_dicts_with_required_keys(self):
         report = _make_report([
@@ -325,7 +330,6 @@ class TestStabilityBreakdown:
             assert "accuracy" in row
             assert "correct" in row
             assert "total" in row
-            assert "fitted_accuracy" in row
             assert "errors_by_category" in row
 
 
@@ -338,12 +342,16 @@ class TestRunAnalysis:
             _make_result("t2", False, INTRA, depth=2),
         ])
         analysis = run_analysis(report)
-        assert "scaling_law" in analysis
-        assert "phase_transition" in analysis
-        assert "error_taxonomy" in analysis
+        # Five structured analyses
+        assert "accuracy_by_depth" in analysis
+        assert "accuracy_by_family" in analysis
+        assert "accuracy_by_dimension" in analysis
+        assert "complexity_analysis" in analysis
         assert "hallucination_onset" in analysis
-        assert "stability_curve" in analysis
+        # Metadata
         assert "overall_accuracy" in analysis
+        assert "total_tasks" in analysis
+        assert "total_correct" in analysis
 
     def test_does_not_raise_on_mixed_family_report(self):
         """Should not crash when given a realistic mixed-family task set."""
@@ -359,13 +367,87 @@ class TestRunAnalysis:
         analysis = run_analysis(report)
         assert analysis["overall_accuracy"] >= 0.0
 
-    def test_includes_scaling_law_by_family(self):
+    def test_accuracy_by_depth_structure(self):
         report = _make_report([
             _make_result("t1", True,  INTRA, depth=1),
             _make_result("t2", False, INTRA, depth=2),
         ])
         analysis = run_analysis(report)
-        assert "scaling_law_by_family" in analysis
+        abd = analysis["accuracy_by_depth"]
+        # Must have both curve and by_family sub-keys
+        assert "curve" in abd
+        assert "by_family" in abd
+        # Each curve row must have the required keys
+        for row in abd["curve"]:
+            assert "depth" in row
+            assert "accuracy" in row
+            assert "correct" in row
+            assert "total" in row
+            assert "errors_by_category" in row
+        # Each family entry must have per-depth rows with required keys
+        for fam, rows in abd["by_family"].items():
+            for row in rows:
+                assert "depth" in row
+                assert "accuracy" in row
+                assert "correct" in row
+                assert "total" in row
+
+    def test_accuracy_by_family_all_families(self):
+        report = _make_report([
+            _make_result("t1", True,  INTRA, depth=1),
+            _make_result("t2", False, INTRA, depth=2),
+            _make_result("t3", True,  CONCEPTUAL, depth=1),
+            _make_result("t4", True,  RULE, depth=1),
+        ])
+        analysis = run_analysis(report)
+        by_fam = analysis["accuracy_by_family"]
+        # Must include non-chain families too
+        assert CONCEPTUAL in by_fam
+        assert RULE in by_fam
+        for fam, d in by_fam.items():
+            assert "total" in d
+            assert "correct" in d
+            assert "accuracy" in d
+
+    def test_accuracy_by_dimension_keys(self):
+        report = _make_report([
+            _make_result("t1", True,  INTRA, dimension="general",  depth=1),
+            _make_result("t2", False, INTRA, dimension="adversarial", depth=1),
+            _make_result("t3", True,  INTRA, dimension="intermediate_state", depth=2),
+        ])
+        analysis = run_analysis(report)
+        by_dim = analysis["accuracy_by_dimension"]
+        assert "general" in by_dim
+        assert "adversarial" in by_dim
+        assert "intermediate_state" in by_dim
+        for dim, d in by_dim.items():
+            assert "total" in d
+            assert "correct" in d
+            assert 0.0 <= d["accuracy"] <= 1.0
+
+    def test_complexity_analysis_structure(self):
+        report = _make_report([
+            _make_result("t1", True,  INTRA, depth=1),
+            _make_result("t2", False, INTRA, depth=2),
+        ])
+        analysis = run_analysis(report)
+        cx = analysis["complexity_analysis"]
+        assert "by_depth" in cx
+        assert "vs_accuracy" in cx
+        assert isinstance(cx["by_depth"], list)
+        assert isinstance(cx["vs_accuracy"], list)
+
+    def test_hallucination_onset_structure(self):
+        report = _make_report([
+            _make_result("t1", True,  INTRA, depth=1),
+            _make_result("t2", False, INTRA, depth=2, response="I cannot determine this"),
+        ])
+        analysis = run_analysis(report)
+        hall = analysis["hallucination_onset"]
+        assert "onset_depth" in hall
+        assert "threshold" in hall
+        assert "curve" in hall
+        assert "note" in hall
 
 
 # ── fit_scaling_law improvements ───────────────────────────────────────────────

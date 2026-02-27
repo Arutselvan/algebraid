@@ -29,6 +29,7 @@ from .adapters import get_adapter
 from .tasks.validator import TaskValidator, print_report
 from .proof import verify_set, print_proof_report
 from .analysis import run_analysis, print_analysis
+from .plots import generate_figures, generate_report_pdf
 from .splits import (
     split_by_depth, split_by_commutativity, split_by_structure,
     split_by_family, split_summary,
@@ -185,7 +186,7 @@ def _evaluate(args: argparse.Namespace) -> None:
 
 def _pipeline(args: argparse.Namespace) -> None:
     """
-    Single-command evaluation pipeline: run -> evaluate -> prove -> analyze.
+    Single-command evaluation pipeline: run -> evaluate -> prove -> analyze -> plot.
 
     Creates a uniquely named run folder containing all artifacts:
 
@@ -195,6 +196,7 @@ def _pipeline(args: argparse.Namespace) -> None:
             eval_report.json     accuracy + complexity metrics (with per-task results)
             proof_report.json    algebraic correctness verification
             analysis.json        scaling laws, phase transitions, error taxonomy
+            figures/             PNG plots + report.pdf
     """
     if not os.path.exists(args.task_set):
         print(f"Error: task set not found: {args.task_set}")
@@ -210,7 +212,7 @@ def _pipeline(args: argparse.Namespace) -> None:
     print(f"Run folder: {run_dir}")
 
     task_set = TaskSet.from_jsonl(args.task_set)
-    total_steps = 2 + (0 if args.skip_prove else 1) + (0 if args.skip_analyze else 1)
+    total_steps = 2 + (0 if args.skip_prove else 1) + (0 if args.skip_analyze else 2)
     step = 1
 
     # -- Step 1: Run model ---------------------------------------------------
@@ -274,8 +276,10 @@ def _pipeline(args: argparse.Namespace) -> None:
 
     # -- Step 4: Analyze -----------------------------------------------------
     analysis_path = None
+    analysis = None
     if not args.skip_analyze:
         print(f"\n[{step}/{total_steps}] Running error analysis ...")
+        step += 1
 
         analysis = run_analysis(report)
         print_analysis(analysis)
@@ -286,7 +290,25 @@ def _pipeline(args: argparse.Namespace) -> None:
             json.dump(saveable, f, indent=2)
         print(f"      Saved -> analysis.json")
     else:
-        print(f"\n[{step}/{total_steps}] Error analysis skipped (--skip-analyze).")
+        print(f"\n  Error analysis skipped (--skip-analyze).")
+
+    # -- Step 5: Generate figures and PDF report -----------------------------
+    figures_dir = None
+    pdf_path = None
+    if analysis is not None:
+        print(f"\n[{step}/{total_steps}] Generating figures and PDF report ...")
+        figures_dir = os.path.join(run_dir, "figures")
+        saved_figs = generate_figures(analysis, figures_dir)
+        if saved_figs:
+            names = [os.path.basename(p) for p in saved_figs]
+            print(f"      Saved -> figures/ ({', '.join(names)})")
+        else:
+            figures_dir = None   # nothing written; omit from manifest
+
+        pdf_path = generate_report_pdf(analysis, figures_dir or run_dir, saved_figs)
+        if pdf_path:
+            rel = os.path.relpath(pdf_path, run_dir)
+            print(f"      Saved -> {rel}")
 
     # -- Manifest ------------------------------------------------------------
     manifest = {
@@ -307,6 +329,8 @@ def _pipeline(args: argparse.Namespace) -> None:
             "eval_report": "eval_report.json",
             **({"proof_report": "proof_report.json"} if proof_path else {}),
             **({"analysis": "analysis.json"} if analysis_path else {}),
+            **({"figures": "figures/"} if figures_dir else {}),
+            **({"report_pdf": os.path.relpath(pdf_path, run_dir)} if pdf_path else {}),
         },
     }
     manifest_path = os.path.join(run_dir, "manifest.json")

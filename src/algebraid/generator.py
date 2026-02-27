@@ -17,6 +17,7 @@ from .primitives.base import AlgebraicStructure
 from .composers import DirectProduct, AlgebraicOperation, ComposedFunction, make_standard_operations
 from .task_model import Task, TaskFamily, CompositionDimension, TaskSet
 from .tasks.verbalizer import Verbalizer
+from .complexity import compute_complexity
 
 
 def _task_id(seed, family, depth, idx):
@@ -537,6 +538,18 @@ class AlgebraidGenerator:
                 for i in range(tasks_per_depth):
                     try:
                         task = gen_func(self.rng, depth, blk_counter, self.seed, self.verbalizer, use_skins=use_skins)  # type: ignore[operator]
+                        # Embed complexity metrics so they persist in the JSONL.
+                        try:
+                            cx = compute_complexity(task)
+                            task.metadata["complexity"] = {
+                                "H_alg":      round(cx.algebraic_entropy,          4),
+                                "D_comm":     round(cx.commutativity_distance,     4),
+                                "O_c":        round(cx.orbit_complexity,           4),
+                                "I_s":        round(cx.structural_interference,    4),
+                                "composite":  round(cx.composite(),                4),
+                            }
+                        except Exception:
+                            pass
                         all_tasks.append(task)
                         blk_counter += 1
                     except Exception as exc:

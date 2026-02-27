@@ -105,6 +105,7 @@ class TaskSet:
     @classmethod
     def from_jsonl(cls, path: str) -> "TaskSet":
         """Load a task set from a JSONL file."""
+        import os as _os
         tasks = []
         with open(path, "r") as f:
             for line in f:
@@ -118,7 +119,10 @@ class TaskSet:
                     data["metadata"] = {}
                 data.setdefault("solution_trace", None)
                 tasks.append(Task(**data))
-        return cls(tasks)
+        # Use the filename stem as the task-set name so reports show e.g.
+        # "sample_all_types_v4" instead of the package default "algebraid".
+        name = _os.path.splitext(_os.path.basename(path))[0]
+        return cls(tasks, name=name)
 
     def summary(self) -> str:
         """Return a string summarizing the task set composition."""

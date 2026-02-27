@@ -71,6 +71,7 @@ class EvalReport:
 
     # Diagnostics
     missing_predictions: int = 0
+    errored_predictions: int = 0   # API errors ([ERROR] responses) — excluded from scoring
 
     # Per-task results (needed for error taxonomy and phase analysis)
     results: List[EvalResult] = field(default_factory=list)
@@ -84,6 +85,7 @@ class EvalReport:
             "total_tasks": self.total_tasks,
             "total_correct": self.total_correct,
             "missing_predictions": self.missing_predictions,
+            "errored_predictions": self.errored_predictions,
             "accuracy_overall": round(self.accuracy_overall, 4),
             "compositional_ceiling_50": self.compositional_ceiling_50,
             "compositional_ceiling_25": self.compositional_ceiling_25,
@@ -128,6 +130,12 @@ class EvalReport:
                     "depth": r.depth,
                     "family": r.family,
                     "dimension": r.dimension,
+                    **({"complexity": {
+                        "H_alg":  round(r.complexity.algebraic_entropy,         4),
+                        "D_comm": round(r.complexity.commutativity_distance,    4),
+                        "O_c":    round(r.complexity.orbit_complexity,          4),
+                        "I_s":    round(r.complexity.structural_interference,   4),
+                    }} if r.complexity is not None else {}),
                 }
                 for r in self.results
             ],
@@ -145,6 +153,14 @@ class EvalReport:
                 depth=r.get("depth", 0),
                 family=r.get("family", ""),
                 dimension=r.get("dimension", ""),
+                complexity=(
+                    AlgebraicComplexity(
+                        algebraic_entropy=r["complexity"].get("H_alg", 0.0),
+                        commutativity_distance=r["complexity"].get("D_comm", 0.0),
+                        orbit_complexity=r["complexity"].get("O_c", 0.0),
+                        structural_interference=r["complexity"].get("I_s", 0.0),
+                    ) if r.get("complexity") else None
+                ),
             )
             for r in d.get("results", [])
         ]
@@ -157,6 +173,7 @@ class EvalReport:
             total_tasks=d.get("total_tasks", 0),
             total_correct=d.get("total_correct", 0),
             missing_predictions=d.get("missing_predictions", 0),
+            errored_predictions=d.get("errored_predictions", 0),
             accuracy_overall=d.get("accuracy_overall", 0.0),
             accuracy_by_depth={
                 int(k): v for k, v in d.get("accuracy_by_depth", {}).items()
@@ -188,6 +205,8 @@ class EvalReport:
               f" ({self.total_correct}/{self.total_tasks})")
         if self.missing_predictions:
             print(f"  Missing Predictions: {self.missing_predictions} (scored as wrong)")
+        if self.errored_predictions:
+            print(f"  Errored Predictions: {self.errored_predictions} (excluded from scoring)")
         print(f"  Compositional Ceiling (50%): depth {self.compositional_ceiling_50}")
         print(f"  Compositional Ceiling (25%): depth {self.compositional_ceiling_25}")
 
@@ -243,6 +262,7 @@ class AlgebraidEvaluator:
         family_stats: defaultdict = defaultdict(lambda: {"correct": 0, "total": 0})
         dim_stats: defaultdict = defaultdict(lambda: {"correct": 0, "total": 0})
         missing = 0
+        errored = 0
 
         complexity_totals = {
             "algebraic_entropy": 0.0,
@@ -257,20 +277,41 @@ class AlgebraidEvaluator:
                 missing += 1
             response: str = predictions.get(task.task_id, "")
 
+            # Skip API error responses entirely — do not count as right or wrong
+            if response.strip() == "[ERROR]":
+                errored += 1
+                continue
+
             try:
                 correct: bool = check_answer(response, task.answer, strict=self.strict)
             except Exception:
                 correct = False
 
-            try:
-                complexity = compute_complexity(task)
-                complexity_totals["algebraic_entropy"] += complexity.algebraic_entropy
-                complexity_totals["commutativity_distance"] += complexity.commutativity_distance
-                complexity_totals["orbit_complexity"] += complexity.orbit_complexity
+            # Prefer complexity stored in task metadata (embedded at generation time);
+            # fall back to computing it live for tasks loaded from older JSONL files.
+            meta_cx = (task.metadata or {}).get("complexity")
+            if meta_cx:
+                complexity = AlgebraicComplexity(
+                    algebraic_entropy=meta_cx.get("H_alg", 0.0),
+                    commutativity_distance=meta_cx.get("D_comm", 0.0),
+                    orbit_complexity=meta_cx.get("O_c", 0.0),
+                    structural_interference=meta_cx.get("I_s", 0.0),
+                )
+                complexity_totals["algebraic_entropy"]       += complexity.algebraic_entropy
+                complexity_totals["commutativity_distance"]  += complexity.commutativity_distance
+                complexity_totals["orbit_complexity"]        += complexity.orbit_complexity
                 complexity_totals["structural_interference"] += complexity.structural_interference
                 complexity_count += 1
-            except Exception:
-                complexity = None
+            else:
+                try:
+                    complexity = compute_complexity(task)
+                    complexity_totals["algebraic_entropy"]       += complexity.algebraic_entropy
+                    complexity_totals["commutativity_distance"]  += complexity.commutativity_distance
+                    complexity_totals["orbit_complexity"]        += complexity.orbit_complexity
+                    complexity_totals["structural_interference"] += complexity.structural_interference
+                    complexity_count += 1
+                except Exception:
+                    complexity = None
 
             family_val = task.family.value if hasattr(task.family, "value") else str(task.family)
             dim_val = task.dimension.value if hasattr(task.dimension, "value") else str(task.dimension)
@@ -329,6 +370,7 @@ class AlgebraidEvaluator:
             total_tasks=total,
             total_correct=total_correct,
             missing_predictions=missing,
+            errored_predictions=errored,
             accuracy_overall=total_correct / total if total > 0 else 0.0,
             accuracy_by_depth=dict(depth_stats),
             accuracy_by_family=dict(family_stats),

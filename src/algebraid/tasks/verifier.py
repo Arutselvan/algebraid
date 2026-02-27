@@ -18,6 +18,11 @@ Reasoning-model robustness notes
 * The ``truth in extracted`` substring check requires ``len(truth) >= 3`` and
   word-boundary isolation to prevent single-digit false positives (e.g. truth
   ``"3"`` must not match inside extracted ``"13"``).
+* ``_extract_think_conclusion`` extracts the final answer stated at the **tail
+  of the think block** (e.g. "Thus answer: X").  ``check_answer`` tests this
+  as a second candidate alongside the post-think extraction, so a concise
+  scratchpad conclusion can score correct even when the formatted response is
+  verbose or wraps the value in extra prose.
 """
 
 import re
@@ -42,6 +47,40 @@ def _strip_think_blocks(text: str) -> str:
     tags; the final answer appears after the closing tag.
     """
     return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+
+def _extract_think_conclusion(text: str) -> Optional[str]:
+    """Extract a clean answer stated at the tail of the last <think> block.
+
+    Reasoning models often conclude their scratchpad with a terse statement
+    like ``"Thus final answer: 2."`` or ``"So answer is flipped."`` before
+    writing a verbose formatted response.  This gives a cleaner candidate than
+    the post-think output for answers that get wrapped in extra prose or LaTeX.
+
+    Returns None if no think block or no conclusive statement is found.
+    """
+    blocks = re.findall(r'<think>(.*?)</think>', text, flags=re.DOTALL | re.IGNORECASE)
+    if not blocks:
+        return None
+    # Use the last think block's tail (last 6 non-empty lines)
+    lines = [l.strip() for l in blocks[-1].split('\n') if l.strip()]
+    tail = '\n'.join(lines[-6:])
+    if not tail:
+        return None
+
+    # "Final answer: X" / "Thus answer: X" / "So answer is X" — last match
+    final_matches = re.findall(r'final\s+answer\s*[:\s]\s*(.+)', tail, re.IGNORECASE)
+    if final_matches:
+        return normalize_answer(final_matches[-1].split('\n')[0])
+
+    answer_matches = re.findall(
+        r'(?:thus|so|therefore)[\s,]*(?:the\s+)?(?:final\s+)?(?:answer|result)\s*(?:is|=|:)\s*(.+)',
+        tail, re.IGNORECASE,
+    )
+    if answer_matches:
+        return normalize_answer(answer_matches[-1].split('\n')[0])
+
+    return None
 
 
 def _extract_binary_answer(text: str) -> Optional[str]:
@@ -152,9 +191,9 @@ def extract_answer(response: str) -> str:
     # Check for "= X" at the end
     equals_match = re.search(r'=\s*(.+?)\.?\s*$', text, re.MULTILINE)
     if equals_match:
-        candidate: str = equals_match.group(1).strip()
-        if len(candidate) < 50:
-            return normalize_answer(candidate)
+        eq_candidate: str = equals_match.group(1).strip()
+        if len(eq_candidate) < 50:
+            return normalize_answer(eq_candidate)
 
     # Take the last non-empty line
     lines: list = [s for s in text.split("\n") if s.strip()]
@@ -169,34 +208,18 @@ def parse_and_verify(model_response: str, ground_truth: str) -> bool:
     return check_answer(model_response, ground_truth)
 
 
-def check_answer(
-    model_response: str,
-    ground_truth: str,
-    strict: bool = False,
-) -> bool:
-    """Check if a model's response matches the ground truth."""
-    extracted: str = extract_answer(model_response)
-    truth: str = normalize_answer(ground_truth)
-
-    # Exact match after normalization
+def _candidate_matches(extracted: str, truth: str, strict: bool) -> bool:
+    """Return True if a single extracted candidate matches the ground truth."""
     if extracted == truth:
         return True
-
-    # Substring containment (non-strict mode).
-    # Guard: require len >= 3 AND word-boundary isolation to prevent
-    # single-digit false positives like truth="3" matching inside "13".
     if not strict and len(truth) >= 3:
         if re.search(r'(?<!\w)' + re.escape(truth) + r'(?!\w)', extracted):
             return True
-
-    # Numeric comparison
     try:
         if float(extracted.replace(",", "")) == float(truth.replace(",", "")):
             return True
     except (ValueError, TypeError):
         pass
-
-    # Tuple comparison
     try:
         extracted_tuple = _parse_tuple(extracted)
         truth_tuple = _parse_tuple(truth)
@@ -205,6 +228,35 @@ def check_answer(
                 return True
     except Exception:
         pass
+    return False
+
+
+def check_answer(
+    model_response: str,
+    ground_truth: str,
+    strict: bool = False,
+) -> bool:
+    """Check if a model's response matches the ground truth.
+
+    Extraction strategy (in order):
+    1. Post-think output — primary source; ``extract_answer`` strips
+       ``<think>`` blocks and applies all extraction patterns to what remains.
+    2. Think-block conclusion — fallback used only when the primary extraction
+       does not match.  Reasoning models often state a terse conclusion at the
+       tail of their scratchpad (e.g. "Thus answer: 2.") before writing a
+       verbose formatted response.  If the post-think text fails to match, this
+       cleaner candidate is checked as a second attempt.
+    """
+    extracted: str = extract_answer(model_response)
+    truth: str = normalize_answer(ground_truth)
+
+    if _candidate_matches(extracted, truth, strict):
+        return True
+
+    # Fallback: try the terse conclusion from the tail of the think block
+    think_conclusion: Optional[str] = _extract_think_conclusion(model_response)
+    if think_conclusion is not None and _candidate_matches(think_conclusion, truth, strict):
+        return True
 
     return False
 
