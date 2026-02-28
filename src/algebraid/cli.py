@@ -395,24 +395,36 @@ def _analyze(args: argparse.Namespace) -> None:
     with open(args.report) as f:
         raw = json.load(f)
 
-    # Full reconstruction including per-task results (needed for error taxonomy)
     report = EvalReport.from_dict(raw)
 
     if not report.results:
-        print("NOTE: Report contains no per-task results; error taxonomy will be empty.")
+        print("NOTE: Report contains no per-task results.")
         print("      Re-run evaluation to get a report with full results.")
 
     analysis = run_analysis(report)
     print_analysis(analysis)
 
+    # Determine output directory for figures (sibling of analysis JSON, or
+    # sibling of the input report when no output path is given).
     if args.output:
-        out_dir = os.path.dirname(args.output)
-        if out_dir:
-            os.makedirs(out_dir, exist_ok=True)
+        out_dir = os.path.dirname(os.path.abspath(args.output))
+        os.makedirs(out_dir, exist_ok=True)
         saveable = {k: v for k, v in analysis.items() if k != "results"}
         with open(args.output, "w") as f:
             json.dump(saveable, f, indent=2)
         print(f"Analysis saved to {args.output}")
+    else:
+        out_dir = os.path.dirname(os.path.abspath(args.report))
+
+    figures_dir = os.path.join(out_dir, "figures")
+    saved_figs = generate_figures(analysis, figures_dir)
+    if saved_figs:
+        names = [os.path.basename(p) for p in saved_figs]
+        print(f"Figures saved to {figures_dir}/ ({', '.join(names)})")
+
+    pdf_path = generate_report_pdf(analysis, figures_dir, saved_figs)
+    if pdf_path:
+        print(f"Report saved to {pdf_path}")
 
 
 # -- split --------------------------------------------------------------------
