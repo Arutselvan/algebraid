@@ -284,6 +284,8 @@ class AlgebraidEvaluator:
 
             try:
                 correct: bool = check_answer(response, task.answer, strict=self.strict)
+                if not correct and task.answer_raw and task.answer_raw != task.answer:
+                    correct = check_answer(response, task.answer_raw, strict=self.strict)
             except Exception:
                 correct = False
 
