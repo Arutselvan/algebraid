@@ -155,8 +155,9 @@ def extract_answer(response: str) -> str:
         return normalize_answer(answer_tags[-1])
 
     # Check for \\boxed{...} — take LAST occurrence (reasoning models may
-    # write wrong intermediate values before correcting themselves)
-    boxed_matches = re.findall(r'\\boxed\{([^}]+)\}', text)
+    # write wrong intermediate values before correcting themselves).
+    # Pattern allows one level of nested braces to handle \text{...} inside lists.
+    boxed_matches = re.findall(r'\\boxed\{((?:[^{}]|\{[^{}]*\})*)\}', text)
     if boxed_matches:
         return normalize_answer(boxed_matches[-1])
 
@@ -263,7 +264,11 @@ def check_answer(
 
 
 def _parse_tuple(s: str) -> Optional[tuple]:
-    """Try to parse a string as a nested tuple of integers."""
+    """Try to parse a string as a nested tuple of integers.
+
+    Accepts both tuple ``(a, b, c)`` and list ``[a, b, c]`` notation so that
+    models which output bracket-delimited permutations are not penalised.
+    """
     s = s.strip()
     if not s:
         return None
@@ -271,6 +276,8 @@ def _parse_tuple(s: str) -> Optional[tuple]:
         result = ast.literal_eval(s)
         if isinstance(result, tuple):
             return result
+        if isinstance(result, list):
+            return tuple(result)
     except Exception:
         return None
     return None
