@@ -34,6 +34,10 @@ def normalize_answer(answer: str) -> str:
     """Normalize an answer string for comparison."""
     s: str = answer.strip().lower()
     s = s.rstrip(".,")
+    # Strip LaTeX \text{...} wrappers: \text{Card 2} -> Card 2
+    s = re.sub(r'\\text\{([^}]*)\}', r'\1', s)
+    # Normalize LaTeX escaped spaces: card\ 2 -> card 2
+    s = s.replace('\\ ', ' ')
     s = " ".join(s.split())
     s = re.sub(r'\s*,\s*', ', ', s)
     s = re.sub(r'\(\s+', '(', s)
@@ -94,6 +98,8 @@ def _extract_binary_answer(text: str) -> Optional[str]:
     model that reconsiders mid-reasoning is scored on its final conclusion.
     """
     t = text.strip().lower()
+    # Strip markdown bold/italic markers so "**Answer:** Yes" -> "answer: yes"
+    t = re.sub(r'\*+', '', t)
     # Exact single-token answer
     if t in ("yes", "no", "true", "false"):
         return "yes" if t in ("yes", "true") else "no"

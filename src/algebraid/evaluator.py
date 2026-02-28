@@ -34,6 +34,11 @@ def _dihedral_canonical(response: str, n: int) -> Optional[str]:
     # Normalise LaTeX: remove \circ, strip surrounding $
     raw = re.sub(r'\\circ', '', raw)
     raw = re.sub(r'^\$+|\$+$', '', raw).strip()
+    # Uppercase R_k / R^k → r^k  (some models write R_4 for r^4)
+    raw = re.sub(r'\bR_(\d+)\b', r'r^\1', raw)
+    raw = re.sub(r'\bR\^(\d+)\b', r'r^\1', raw)
+    # Map 'f' (flip) → 's' (reflection) — alternate standard notation for D_n
+    raw = re.sub(r'\bf\b', 's', raw)
     # "r^k s" → "r^ks",  "r s" → "r^1s"
     raw = re.sub(r'(r\^\d+)\s+s\b', r'\1s', raw)
     raw = re.sub(r'\br\s+s\b', 'r^1s', raw)
