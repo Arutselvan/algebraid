@@ -9,10 +9,53 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from collections import defaultdict
 import json
+import re
 
 from .task_model import Task, TaskSet, TaskFamily, CompositionDimension
-from .tasks.verifier import check_answer
+from .tasks.verifier import check_answer, extract_answer
 from .complexity import compute_complexity, AlgebraicComplexity
+
+
+def _dihedral_canonical(response: str, n: int) -> Optional[str]:
+    """Convert alternative dihedral notation to canonical form for comparison.
+
+    In D_n the relation s·r^k = r^(n-k)·s means ``s r^k`` and ``r^{n-k}s``
+    name the same element.  Models trained on group theory often output the
+    ``s r^k`` form while the generator uses the canonical ``r^ks`` form.
+
+    Also handles spacing variants (``r^2 s``) and LaTeX composition notation
+    (``r^2 \\circ s``).
+
+    Returns the canonical ``r^ks`` / ``s`` / ``e`` string if the response
+    parses as a dihedral element in any recognised notation, else None.
+    """
+    raw = extract_answer(response).strip()
+
+    # Normalise LaTeX: remove \circ, strip surrounding $
+    raw = re.sub(r'\\circ', '', raw)
+    raw = re.sub(r'^\$+|\$+$', '', raw).strip()
+    # "r^k s" → "r^ks",  "r s" → "r^1s"
+    raw = re.sub(r'(r\^\d+)\s+s\b', r'\1s', raw)
+    raw = re.sub(r'\br\s+s\b', 'r^1s', raw)
+    # Remove remaining spaces
+    raw = raw.replace(' ', '')
+
+    # Already canonical: e, s, r^k, r^ks
+    if re.fullmatch(r'e|s|r\^\d+|r\^\d+s', raw):
+        return raw
+
+    # s r^k (collapsed to sr^k) → r^{n-k}s
+    m = re.fullmatch(r'sr\^(\d+)', raw)
+    if m:
+        k = int(m.group(1))
+        r_val = (n - k) % n
+        return "s" if r_val == 0 else f"r^{r_val}s"
+
+    # bare 'rs' → 'r^1s'
+    if raw == 'rs':
+        return "r^1s"
+
+    return None
 
 
 # Families where depth meaningfully corresponds to task difficulty.
@@ -286,6 +329,13 @@ class AlgebraidEvaluator:
                 correct: bool = check_answer(response, task.answer, strict=self.strict)
                 if not correct and task.answer_raw and task.answer_raw != task.answer:
                     correct = check_answer(response, task.answer_raw, strict=self.strict)
+                # Dihedral notation: normalise spacing/composition variants and retry
+                if not correct and task.structures and len(task.structures) == 1:
+                    m = re.match(r'^D_(\d+)$', task.structures[0])
+                    if m:
+                        canon = _dihedral_canonical(response, int(m.group(1)))
+                        if canon:
+                            correct = check_answer(canon, task.answer_raw, strict=self.strict)
             except Exception:
                 correct = False
 
