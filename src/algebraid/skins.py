@@ -415,12 +415,9 @@ class SecretCodesSkin(SemanticSkin):
         if "conj" in op_name and fixed_args:
             k = fixed_args[0]
             return f"apply code conjugation by {k} (compute {k} + x + ({p} - {k}) mod {p})"
-        if "left_mul" in op_name and fixed_args:
+        if ("left_mul" in op_name or "right_mul" in op_name) and fixed_args:
             k = fixed_args[0]
             return f"shift the code by adding {k} (mod {p})"
-        if "right_mul" in op_name and fixed_args:
-            k = fixed_args[0]
-            return f"combine the code with {k} by adding (mod {p})"
         if "power" in op_name and fixed_args:
             k = fixed_args[0]
             return f"multiply the current code value by {k} (mod {p})"
@@ -447,12 +444,9 @@ class ModularArithmeticSkin(SemanticSkin):
         if "conj" in op_name and fixed_args:
             k = fixed_args[0]
             return f"conjugate by {k} (compute {k} + x + ({p} - {k}) mod {p})"
-        if "left_mul" in op_name and fixed_args:
+        if ("left_mul" in op_name or "right_mul" in op_name) and fixed_args:
             k = fixed_args[0]
             return f"add {k} (mod {p})"
-        if "right_mul" in op_name and fixed_args:
-            k = fixed_args[0]
-            return f"add {k} to the result (mod {p})"
         if "power" in op_name and fixed_args:
             k = fixed_args[0]
             return f"multiply by {k} (mod {p})"

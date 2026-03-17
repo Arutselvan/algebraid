@@ -26,6 +26,7 @@ Reasoning-model robustness notes
 """
 
 import ast
+import math
 import re
 from typing import Optional
 
@@ -33,7 +34,11 @@ from typing import Optional
 def normalize_answer(answer: str) -> str:
     """Normalize an answer string for comparison."""
     s: str = answer.strip().lower()
+    # Normalize Unicode minus sign (U+2212) to ASCII hyphen-minus
+    s = s.replace('\u2212', '-')
     s = s.rstrip(".,")
+    # Strip markdown bold/italic markers: **answer** -> answer, *answer* -> answer
+    s = re.sub(r'\*+', '', s)
     # Strip LaTeX \text{...} wrappers: \text{Card 2} -> Card 2
     s = re.sub(r'\\text\{([^}]*)\}', r'\1', s)
     # Normalize LaTeX escaped spaces: card\ 2 -> card 2
@@ -143,8 +148,10 @@ def _extract_multiple_choice(text: str) -> Optional[str]:
     m = re.match(r'^[(\[]?([abcd])[)\]]?[.:\s]', t)
     if m:
         return m.group(1)
-    # Single letter at end of response (final answer format)
-    m = re.search(r'[(\[]?([abcd])[)\]]?\.?\s*$', t)
+    # Single letter at end of response (final answer format).
+    # The (?<!\w) lookbehind prevents matching a letter inside a word
+    # (e.g. "bob]" must not extract "b").
+    m = re.search(r'(?<!\w)[(\[]?([abcd])[)\]]?\.?\s*$', t)
     if m and len(t.split()) <= 5:  # only for short responses to avoid false positives
         return m.group(1)
     return None
@@ -224,7 +231,12 @@ def _candidate_matches(extracted: str, truth: str, strict: bool) -> bool:
         if re.search(r'(?<!\w)' + re.escape(truth) + r'(?!\w)', extracted):
             return True
     try:
-        if float(extracted.replace(",", "")) == float(truth.replace(",", "")):
+        e_float = float(extracted.replace(",", ""))
+        t_float = float(truth.replace(",", ""))
+        # Reject inf, nan, and scientific notation — algebra answers are plain integers
+        if (math.isfinite(e_float) and math.isfinite(t_float)
+                and "e" not in extracted.lower() and "e" not in truth.lower()
+                and e_float == t_float):
             return True
     except (ValueError, TypeError):
         pass
@@ -274,16 +286,120 @@ def _parse_tuple(s: str) -> Optional[tuple]:
 
     Accepts both tuple ``(a, b, c)`` and list ``[a, b, c]`` notation so that
     models which output bracket-delimited permutations are not penalised.
+    Rejects tuples containing non-integer elements (floats, strings, etc.).
     """
     s = s.strip()
     if not s:
         return None
     try:
         result = ast.literal_eval(s)
-        if isinstance(result, tuple):
-            return result
-        if isinstance(result, list):
-            return tuple(result)
+        if isinstance(result, (tuple, list)):
+            flat = _flatten_to_list(result)
+            # Only accept if all leaf values are ints (not floats or strings)
+            if all(isinstance(v, int) and not isinstance(v, bool) for v in flat):
+                return tuple(result) if isinstance(result, list) else result
     except Exception:
         return None
+    return None
+
+
+def _flatten_to_list(t) -> list:
+    """Recursively flatten nested tuples/lists to a flat list of leaf values."""
+    out: list = []
+    if isinstance(t, (tuple, list)):
+        for item in t:
+            out.extend(_flatten_to_list(item))
+    else:
+        out.append(t)
+    return out
+
+
+_Q8_ELEMENTS = frozenset({"1", "-1", "i", "-i", "j", "-j", "k", "-k"})
+
+
+def _quaternion_canonical(response: str) -> Optional[str]:
+    """Normalize alternative Q_8 notation to canonical element strings.
+
+    Handles common model-output variants:
+      "+i" -> "i",  "+1" -> "1"        (strip leading +)
+      "e"  -> "1"                       (identity alias)
+      "1i" / "1j" / "1k" -> "i" / "j" / "k"   (strip unit coefficient)
+      "-1i" / "-1j" / "-1k" -> "-i" / "-j" / "-k"
+
+    Returns the canonical Q_8 element string, or None if not parseable.
+    """
+    raw = extract_answer(response).strip()
+    # Already canonical?
+    if raw in _Q8_ELEMENTS:
+        return raw
+    # Strip leading '+'
+    if raw.startswith("+"):
+        raw = raw[1:]
+    # Identity aliases
+    if raw == "e":
+        raw = "1"
+    elif raw == "-e":
+        raw = "-1"
+    # "-1i" -> "-i", "-1j" -> "-j", "-1k" -> "-k"
+    m = re.fullmatch(r'-1([ijk])', raw)
+    if m:
+        raw = f"-{m.group(1)}"
+    # "1i" -> "i", "1j" -> "j", "1k" -> "k"
+    m = re.fullmatch(r'1([ijk])', raw)
+    if m:
+        raw = m.group(1)
+    return raw if raw in _Q8_ELEMENTS else None
+
+
+def _dihedral_canonical(response: str, n: int) -> Optional[str]:
+    """Convert alternative dihedral notation to canonical form for comparison.
+
+    In D_n the relation s*r^k = r^(n-k)*s means ``s r^k`` and ``r^{n-k}s``
+    name the same element.  Models trained on group theory often output the
+    ``s r^k`` form while the generator uses the canonical ``r^ks`` form.
+
+    Also handles spacing variants (``r^2 s``) and LaTeX composition notation
+    (``r^2 \\circ s``).
+
+    Returns the canonical ``r^ks`` / ``s`` / ``e`` string if the response
+    parses as a dihedral element in any recognised notation, else None.
+    """
+    raw = extract_answer(response).strip()
+
+    # Normalise LaTeX: remove \circ, strip surrounding $
+    raw = re.sub(r'\\circ', '', raw)
+    raw = re.sub(r'^\$+|\$+$', '', raw).strip()
+    # Uppercase R_k / R^k -> r^k  (some models write R_4 for r^4)
+    raw = re.sub(r'\bR_(\d+)\b', r'r^\1', raw)
+    raw = re.sub(r'\bR\^(\d+)\b', r'r^\1', raw)
+    # Map 'f' (flip) -> 's' (reflection) -- alternate standard notation for D_n
+    raw = re.sub(r'\bf\b', 's', raw)
+    # "r^k s" -> "r^ks",  "r s" -> "r^1s"
+    raw = re.sub(r'(r\^\d+)\s+s\b', r'\1s', raw)
+    raw = re.sub(r'\br\s+s\b', 'r^1s', raw)
+    # Remove remaining spaces
+    raw = raw.replace(' ', '')
+
+    # Already canonical: e, s, r^k, r^ks -- but reduce exponent mod n
+    if re.fullmatch(r'e|s|r\^\d+|r\^\d+s', raw):
+        m_canon = re.fullmatch(r'r\^(\d+)(s?)', raw)
+        if m_canon:
+            k = int(m_canon.group(1)) % n
+            has_s = m_canon.group(2)
+            if k == 0:
+                return "s" if has_s else "e"
+            return f"r^{k}{has_s}"
+        return raw
+
+    # s r^k (collapsed to sr^k) -> r^{n-k}s
+    m = re.fullmatch(r'sr\^(\d+)', raw)
+    if m:
+        k = int(m.group(1))
+        r_val = (n - k) % n
+        return "s" if r_val == 0 else f"r^{r_val}s"
+
+    # bare 'rs' -> 'r^1s'
+    if raw == 'rs':
+        return "r^1s"
+
     return None

@@ -31,11 +31,12 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .task_model import Task, TaskSet
+from .task_model import Task, TaskFamily, TaskSet
 from .primitives import (
     CyclicGroup, SymmetricGroup, DihedralGroup, FiniteField, QuaternionGroup,
 )
 from .primitives.base import AlgebraicStructure
+from .composers import DirectProduct
 
 
 # -- Q_8 element name -> internal index ---------------------------------------
@@ -142,6 +143,103 @@ def _apply_named_op(op_name: str, val: Any, structure: AlgebraicStructure) -> An
     raise ValueError(f"Unrecognised operation: {op_name!r}")
 
 
+# -- Direct product support ---------------------------------------------------
+
+def _parse_structure_list(names: List[str]) -> Optional[AlgebraicStructure]:
+    """Reconstruct a (possibly composed) structure from a list of names.
+
+    If *names* has one entry, returns a single structure.
+    If multiple, composes them left-to-right with DirectProduct, matching
+    the generator's construction order.
+    """
+    if not names:
+        return None
+    structs = [_parse_structure(n) for n in names]
+    if any(s is None for s in structs):
+        return None
+    result = structs[0]
+    for s in structs[1:]:
+        result = DirectProduct(result, s)
+    return result
+
+
+def _parse_dp_element(s: str, structure: AlgebraicStructure) -> Any:
+    """Parse a string like ``(1, 3)`` or ``((1, 3), 5)`` into a nested tuple.
+
+    For a single (non-product) structure, delegates to ``_parse_element``.
+    For DirectProducts, recursively parses the nested parenthesised form
+    produced by ``DirectProduct.element_to_str``.
+    """
+    if not isinstance(structure, DirectProduct):
+        return _parse_element(s, structure)
+
+    import ast
+    raw = ast.literal_eval(s.strip())
+
+    def _convert(val: Any, st: AlgebraicStructure) -> Any:
+        if not isinstance(st, DirectProduct):
+            return _parse_element(str(val), st)
+        if not isinstance(val, (tuple, list)) or len(val) != 2:
+            raise ValueError(f"Expected 2-tuple for DirectProduct, got {val!r}")
+        left = _convert(val[0], st.G)
+        right = _convert(val[1], st.H)
+        return (left, right)
+
+    return _convert(raw, structure)
+
+
+def _verify_inter_task(task: Task) -> "ProofResult":
+    """Verify an inter-structure task by reconstructing the DirectProduct."""
+    meta = task.metadata or {}
+    inter_op = meta.get("inter_op")
+    if not inter_op:
+        return ProofResult(
+            task_id=task.task_id, verified=True, steps_checked=0,
+            error_message="Skipped: no inter_op metadata.",
+        )
+
+    structure = _parse_structure_list(task.structures or [])
+    if structure is None:
+        return ProofResult(
+            task_id=task.task_id, verified=True, steps_checked=0,
+            error_message="Skipped: cannot reconstruct structure list.",
+        )
+
+    try:
+        a = _parse_dp_element(meta["operand_a"], structure)
+        if inter_op == "inverse":
+            computed = structure.inverse(a)
+        elif inter_op == "op":
+            b = _parse_dp_element(meta["operand_b"], structure)
+            computed = structure.op(a, b)
+        elif inter_op == "op_then_inverse":
+            b = _parse_dp_element(meta["operand_b"], structure)
+            c = structure.op(a, b)
+            computed = structure.inverse(c)
+        else:
+            return ProofResult(
+                task_id=task.task_id, verified=False, steps_checked=0,
+                error_message=f"Unknown inter_op: {inter_op!r}",
+            )
+
+        expected = _parse_dp_element(str(task.answer_raw), structure)
+        if computed != expected:
+            return ProofResult(
+                task_id=task.task_id, verified=False, steps_checked=0,
+                error_message=(
+                    f"Inter verification failed: computed "
+                    f"{structure.element_to_str(computed)!r}, "
+                    f"expected {task.answer_raw!r}."
+                ),
+            )
+        return ProofResult(task_id=task.task_id, verified=True, steps_checked=1)
+    except Exception as exc:
+        return ProofResult(
+            task_id=task.task_id, verified=False, steps_checked=0,
+            error_message=f"Inter verification error: {exc}",
+        )
+
+
 # -- Proof result -------------------------------------------------------------
 
 @dataclass
@@ -163,6 +261,10 @@ def verify_task(task: Task) -> ProofResult:
     Returns a ProofResult.  Tasks without a solution_trace are marked
     verified=True with steps_checked=0 (skipped, not failed).
     """
+    # Inter-structure tasks have no solution trace but can be independently verified
+    if task.family == TaskFamily.INTER_STRUCTURE and not task.solution_trace:
+        return _verify_inter_task(task)
+
     if not task.solution_trace:
         return ProofResult(task_id=task.task_id, verified=True, steps_checked=0)
 

@@ -46,23 +46,12 @@ def _make_result(task_id, correct, family, dimension="general", depth=1,
 
 
 def _make_report(results):
-    from collections import defaultdict
-    depth_stats = defaultdict(lambda: {"correct": 0, "total": 0})
-    for r in results:
-        depth_stats[r.depth]["total"] += 1
-        if r.correct:
-            depth_stats[r.depth]["correct"] += 1
-    for v in depth_stats.values():
-        v["accuracy"] = v["correct"] / v["total"]
     return EvalReport(
         model_name="test",
         task_set_name="test_set",
         total_tasks=len(results),
         total_correct=sum(1 for r in results if r.correct),
         accuracy_overall=sum(1 for r in results if r.correct) / len(results),
-        accuracy_by_depth=dict(depth_stats),
-        accuracy_by_family={},
-        accuracy_by_dimension={},
         compositional_ceiling_50=None,
         compositional_ceiling_25=None,
         results=results,

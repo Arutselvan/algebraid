@@ -78,16 +78,34 @@ def _build_field_expression(field, depth, rng):
     return f"({left_expr} {op} {right_expr})", val
 
 
+def _pick_skin(rng, structure, use_skins):
+    """Return a random skin for the structure, or None."""
+    if not use_skins:
+        return None
+    return rng.choice(SKIN_REGISTRY[structure.__class__.__name__])
+
+
+def _display_answer(answer_raw, structure, skin):
+    """Return (answer_display, answer_raw_str)."""
+    raw_str = structure.element_to_str(answer_raw)
+    display = skin.element_name(answer_raw, structure) if skin else raw_str
+    return display, raw_str
+
+
+def _serialize_trace(trace, structure):
+    """Serialize a trace to (op_name, element_str) pairs."""
+    return [(name, structure.element_to_str(val)) for name, val in trace]
+
+
 def _generate_intra_structure_task(rng, depth, idx, seed, verbalizer, dimension=CompositionDimension.GENERAL, use_skins=True):
     structure = _random_structure(rng)
-    skin = rng.choice(SKIN_REGISTRY[structure.__class__.__name__]) if use_skins else None
+    skin = _pick_skin(rng, structure, use_skins)
     all_ops = make_standard_operations(structure, rng)
     chosen_ops = [rng.choice(all_ops) for _ in range(depth)]
     chain = ComposedFunction(chosen_ops, structure)
     x = structure.random_element(rng)
     answer_raw = chain(x)
-    answer_str = structure.element_to_str(answer_raw)
-    answer_display = skin.element_name(answer_raw, structure) if skin else answer_str
+    answer_display, answer_str = _display_answer(answer_raw, structure, skin)
     trace = chain.trace(x)
     prompt = verbalizer.verbalize_intra(structure, chain, x, skin=skin)
     return Task(
@@ -100,7 +118,7 @@ def _generate_intra_structure_task(rng, depth, idx, seed, verbalizer, dimension=
         dimension=dimension,
         structures=[structure.name],
         metadata={"skin": skin.name if skin else None},
-        solution_trace=[(op_name, structure.element_to_str(val)) for op_name, val in trace],
+        solution_trace=_serialize_trace(trace, structure),
     )
 
 
@@ -135,6 +153,11 @@ def _generate_inter_structure_task(rng, depth, idx, seed, verbalizer, dimension=
         family=TaskFamily.INTER_STRUCTURE,
         dimension=dimension,
         structures=[s.name for s in structures],
+        metadata={
+            "inter_op": op_type,
+            "operand_a": composed.element_to_str(a),
+            "operand_b": composed.element_to_str(b) if op_type != "inverse" else None,
+        },
     )
 
 
@@ -166,10 +189,10 @@ def _generate_rule_induction_task(rng, depth, idx, seed, verbalizer, dimension=C
     test_input = inputs[num_examples]
     answer_raw = chain(test_input)
 
-    skin = rng.choice(SKIN_REGISTRY[structure.__class__.__name__]) if use_skins else None
+    skin = _pick_skin(rng, structure, use_skins)
     prompt = verbalizer.verbalize_rule(structure, examples, test_input, skin=skin)
-    answer_str = structure.element_to_str(answer_raw)
-    answer_display = skin.element_name(answer_raw, structure) if skin else answer_str
+    answer_display, answer_str = _display_answer(answer_raw, structure, skin)
+    trace = chain.trace(test_input)
 
     return Task(
         task_id=_task_id(seed, "rule", depth, idx),
@@ -181,6 +204,7 @@ def _generate_rule_induction_task(rng, depth, idx, seed, verbalizer, dimension=C
         dimension=dimension,
         structures=[structure.name],
         metadata={"skin": skin.name if skin else None},
+        solution_trace=_serialize_trace(trace, structure),
     )
 
 
@@ -286,8 +310,15 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
 
     if adv_type == "double_inverse":
         structure = _random_structure(rng)
-        skin = rng.choice(SKIN_REGISTRY[structure.__class__.__name__]) if use_skins else None
-        x = structure.random_element(rng)
+        skin = _pick_skin(rng, structure, use_skins)
+        # Avoid self-inverse elements — when inverse(x) == x the trap is
+        # ineffective because wrong_answer == correct answer.
+        elements = structure.elements()
+        x = rng.choice(elements)
+        for _ in range(50):
+            if structure.inverse(x) != x:
+                break
+            x = rng.choice(elements)
         all_ops = make_standard_operations(structure, rng)
         inv_ops = [op for op in all_ops if op.name == "inverse"]
         if not inv_ops:
@@ -312,7 +343,7 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
 
     elif adv_type == "self_cancelling":
         structure = _random_cyclic(rng, min_n=4, max_n=15)
-        skin = rng.choice(SKIN_REGISTRY["CyclicGroup"]) if use_skins else None
+        skin = _pick_skin(rng, structure, use_skins)
         x = structure.random_element(rng)
         n = structure.n
         c = rng.randint(1, n - 1)
@@ -362,7 +393,7 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
             structure = _random_dihedral(rng)
         else:
             structure = QuaternionGroup()
-        skin = rng.choice(SKIN_REGISTRY[structure.__class__.__name__]) if use_skins else None
+        skin = _pick_skin(rng, structure, use_skins)
         elements = structure.elements()
         a_elem = rng.choice(elements)
         b_elem = rng.choice(elements)
@@ -401,9 +432,10 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
 
     else:  # identity_bait
         structure = _random_cyclic(rng, min_n=4, max_n=15)
-        skin = rng.choice(SKIN_REGISTRY["CyclicGroup"]) if use_skins else None
-        x = structure.random_element(rng)
+        skin = _pick_skin(rng, structure, use_skins)
+        # Avoid x=0 (identity) — adding 0 to reach 0 is trivially obvious.
         n = structure.n
+        x = rng.randint(1, n - 1)
         neg_x = (-x) % n
         # Chain: add neg_x to x -> result is 0 (identity)
         op_cancel = AlgebraicOperation(
@@ -428,10 +460,7 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
             note="Compute the result step by step.",
         )
 
-    answer_str = structure.element_to_str(answer_raw_val)
-    answer_display = answer_str
-    if use_skins and skin:
-        answer_display = skin.element_name(answer_raw_val, structure)
+    answer_display, answer_str = _display_answer(answer_raw_val, structure, skin)
 
     return Task(
         task_id=_task_id(seed, "adversarial", depth, idx),
@@ -448,7 +477,7 @@ def _generate_adversarial_task(rng, depth, idx, seed, verbalizer, use_skins=True
             "wrong_answer_rationale": rationale,
             "skin": skin.name if skin else None,
         },
-        solution_trace=[(op_name, structure.element_to_str(val)) for op_name, val in trace],
+        solution_trace=_serialize_trace(trace, structure),
     )
 
 
@@ -457,7 +486,7 @@ def _generate_intermediate_state_task(rng, depth, idx, seed, verbalizer, use_ski
     if depth < 2:
         depth = 2
     structure = _random_structure(rng)
-    skin = rng.choice(SKIN_REGISTRY[structure.__class__.__name__]) if use_skins else None
+    skin = _pick_skin(rng, structure, use_skins)
     all_ops = make_standard_operations(structure, rng)
     chosen_ops = [rng.choice(all_ops) for _ in range(depth)]
     chain = ComposedFunction(chosen_ops, structure)
@@ -470,8 +499,7 @@ def _generate_intermediate_state_task(rng, depth, idx, seed, verbalizer, use_ski
     k = rng.randint(1, depth - 1)
 
     answer_raw_val = full_trace[k][1]  # value after step k
-    answer_str = structure.element_to_str(answer_raw_val)
-    answer_display = skin.element_name(answer_raw_val, structure) if skin else answer_str
+    answer_display, answer_str = _display_answer(answer_raw_val, structure, skin)
 
     final_val = full_trace[depth][1]
     final_str = structure.element_to_str(final_val)
@@ -493,7 +521,7 @@ def _generate_intermediate_state_task(rng, depth, idx, seed, verbalizer, use_ski
             "final_answer": final_str,
             "skin": skin.name if skin else None,
         },
-        solution_trace=[(op_name, structure.element_to_str(val)) for op_name, val in full_trace[:k + 1]],
+        solution_trace=_serialize_trace(full_trace[:k + 1], structure),
     )
 
 

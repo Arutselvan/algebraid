@@ -6,61 +6,64 @@ dimension, and four algebraic complexity metrics.
 """
 
 from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, field
-from collections import defaultdict
+from dataclasses import dataclass
 import json
 import re
 
 from .task_model import Task, TaskSet, TaskFamily, CompositionDimension
-from .tasks.verifier import check_answer, extract_answer
-from .complexity import compute_complexity, AlgebraicComplexity
+from .tasks.verifier import check_answer, _dihedral_canonical, _quaternion_canonical
+from .complexity import AlgebraicComplexity
 
 
-def _dihedral_canonical(response: str, n: int) -> Optional[str]:
-    """Convert alternative dihedral notation to canonical form for comparison.
+def _compute_stats(results, key_fn):
+    """Compute {key: {correct, total, accuracy}} from a list of EvalResults."""
+    stats = {}
+    for r in results:
+        k = key_fn(r)
+        if k not in stats:
+            stats[k] = {"correct": 0, "total": 0}
+        stats[k]["total"] += 1
+        if r.correct:
+            stats[k]["correct"] += 1
+    for v in stats.values():
+        v["accuracy"] = v["correct"] / v["total"] if v["total"] > 0 else 0.0
+    return stats
 
-    In D_n the relation s·r^k = r^(n-k)·s means ``s r^k`` and ``r^{n-k}s``
-    name the same element.  Models trained on group theory often output the
-    ``s r^k`` form while the generator uses the canonical ``r^ks`` form.
 
-    Also handles spacing variants (``r^2 s``) and LaTeX composition notation
-    (``r^2 \\circ s``).
+_HALLUCINATION_RE = re.compile(
+    r"cannot|undefined|infinity|idk|unknown|impossible|not defined|n/a|none|sorry|don.t know",
+    re.IGNORECASE,
+)
 
-    Returns the canonical ``r^ks`` / ``s`` / ``e`` string if the response
-    parses as a dihedral element in any recognised notation, else None.
-    """
-    raw = extract_answer(response).strip()
 
-    # Normalise LaTeX: remove \circ, strip surrounding $
-    raw = re.sub(r'\\circ', '', raw)
-    raw = re.sub(r'^\$+|\$+$', '', raw).strip()
-    # Uppercase R_k / R^k → r^k  (some models write R_4 for r^4)
-    raw = re.sub(r'\bR_(\d+)\b', r'r^\1', raw)
-    raw = re.sub(r'\bR\^(\d+)\b', r'r^\1', raw)
-    # Map 'f' (flip) → 's' (reflection) — alternate standard notation for D_n
-    raw = re.sub(r'\bf\b', 's', raw)
-    # "r^k s" → "r^ks",  "r s" → "r^1s"
-    raw = re.sub(r'(r\^\d+)\s+s\b', r'\1s', raw)
-    raw = re.sub(r'\br\s+s\b', 'r^1s', raw)
-    # Remove remaining spaces
-    raw = raw.replace(' ', '')
+def _to_num(s: str) -> Optional[float]:
+    """Try to extract a leading number from a string."""
+    try:
+        token = s.strip().split()[0] if s.strip() else ""
+        cleaned = re.sub(r"[^0-9\-\.]", "", token)
+        return float(cleaned) if cleaned else None
+    except (ValueError, IndexError):
+        return None
 
-    # Already canonical: e, s, r^k, r^ks
-    if re.fullmatch(r'e|s|r\^\d+|r\^\d+s', raw):
-        return raw
 
-    # s r^k (collapsed to sr^k) → r^{n-k}s
-    m = re.fullmatch(r'sr\^(\d+)', raw)
-    if m:
-        k = int(m.group(1))
-        r_val = (n - k) % n
-        return "s" if r_val == 0 else f"r^{r_val}s"
-
-    # bare 'rs' → 'r^1s'
-    if raw == 'rs':
-        return "r^1s"
-
-    return None
+def _classify_error(result: "EvalResult") -> str:
+    """Classify a wrong answer into a broad failure mode."""
+    resp = result.model_response.strip()
+    if _HALLUCINATION_RE.search(resp):
+        return "hallucination"
+    if result.dimension == CompositionDimension.ADVERSARIAL.value:
+        return "adversarial_trap"
+    is_tuple_answer = result.ground_truth.strip().startswith("(")
+    resp_num = None if is_tuple_answer else _to_num(resp)
+    gt_num = None if is_tuple_answer else _to_num(result.ground_truth)
+    if resp_num is not None and gt_num is not None:
+        if abs(resp_num - gt_num) == 1:
+            return "off_by_one"
+        if resp_num != 0 and abs(resp_num + gt_num) <= 1:
+            return "inverse_confusion"
+    if resp.lower() in ("0", "1", "e", "identity", "(0)", "(1)"):
+        return "identity_confusion"
+    return "wrong_value"
 
 
 # Families where depth meaningfully corresponds to task difficulty.
@@ -87,42 +90,59 @@ class EvalResult:
     family: str
     dimension: str
     complexity: Optional[AlgebraicComplexity] = None
+    error_category: Optional[str] = None
 
 
-@dataclass
 class EvalReport:
     """Comprehensive evaluation report."""
-    model_name: str
-    task_set_name: str
-    total_tasks: int
-    total_correct: int
 
-    # Accuracy breakdowns
-    accuracy_overall: float
-    accuracy_by_depth: Dict[int, Dict[str, Any]]
-    accuracy_by_family: Dict[str, Dict[str, Any]]
-    accuracy_by_dimension: Dict[str, Dict[str, Any]]
+    def __init__(
+        self,
+        model_name: str,
+        task_set_name: str,
+        total_tasks: int,
+        total_correct: int,
+        accuracy_overall: float,
+        compositional_ceiling_50: Optional[int],
+        compositional_ceiling_25: Optional[int],
+        avg_algebraic_entropy: float = 0.0,
+        avg_commutativity_distance: float = 0.0,
+        avg_orbit_complexity: float = 0.0,
+        avg_structural_interference: float = 0.0,
+        run_id: str = "",
+        timestamp: str = "",
+        missing_predictions: int = 0,
+        errored_predictions: int = 0,
+        results: Optional[List[EvalResult]] = None,
+    ):
+        self.model_name = model_name
+        self.task_set_name = task_set_name
+        self.total_tasks = total_tasks
+        self.total_correct = total_correct
+        self.accuracy_overall = accuracy_overall
+        self.compositional_ceiling_50 = compositional_ceiling_50
+        self.compositional_ceiling_25 = compositional_ceiling_25
+        self.avg_algebraic_entropy = avg_algebraic_entropy
+        self.avg_commutativity_distance = avg_commutativity_distance
+        self.avg_orbit_complexity = avg_orbit_complexity
+        self.avg_structural_interference = avg_structural_interference
+        self.run_id = run_id
+        self.timestamp = timestamp
+        self.missing_predictions = missing_predictions
+        self.errored_predictions = errored_predictions
+        self.results = results if results is not None else []
 
-    # Compositional ceiling
-    compositional_ceiling_50: Optional[int]
-    compositional_ceiling_25: Optional[int]
+    @property
+    def accuracy_by_depth(self) -> Dict[int, Dict[str, Any]]:
+        return _compute_stats(self.results, lambda r: r.depth)
 
-    # Algebraic Complexity Metrics (averages across all tasks)
-    avg_algebraic_entropy: float = 0.0
-    avg_commutativity_distance: float = 0.0
-    avg_orbit_complexity: float = 0.0
-    avg_structural_interference: float = 0.0
+    @property
+    def accuracy_by_family(self) -> Dict[str, Dict[str, Any]]:
+        return _compute_stats(self.results, lambda r: r.family)
 
-    # Run identity (populated by pipeline or explicit evaluate --run-id)
-    run_id: str = ""
-    timestamp: str = ""
-
-    # Diagnostics
-    missing_predictions: int = 0
-    errored_predictions: int = 0   # API errors ([ERROR] responses) — excluded from scoring
-
-    # Per-task results (needed for error taxonomy and phase analysis)
-    results: List[EvalResult] = field(default_factory=list)
+    @property
+    def accuracy_by_dimension(self) -> Dict[str, Dict[str, Any]]:
+        return _compute_stats(self.results, lambda r: r.dimension)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -178,6 +198,7 @@ class EvalReport:
                     "depth": r.depth,
                     "family": r.family,
                     "dimension": r.dimension,
+                    **({"error_category": r.error_category} if r.error_category else {}),
                     **({"complexity": {
                         "H_alg":  round(r.complexity.algebraic_entropy,         4),
                         "D_comm": round(r.complexity.commutativity_distance,    4),
@@ -209,6 +230,7 @@ class EvalReport:
                         structural_interference=r["complexity"].get("I_s", 0.0),
                     ) if r.get("complexity") else None
                 ),
+                error_category=r.get("error_category"),
             )
             for r in d.get("results", [])
         ]
@@ -223,11 +245,6 @@ class EvalReport:
             missing_predictions=d.get("missing_predictions", 0),
             errored_predictions=d.get("errored_predictions", 0),
             accuracy_overall=d.get("accuracy_overall", 0.0),
-            accuracy_by_depth={
-                int(k): v for k, v in d.get("accuracy_by_depth", {}).items()
-            },
-            accuracy_by_family=d.get("accuracy_by_family", {}),
-            accuracy_by_dimension=d.get("accuracy_by_dimension", {}),
             compositional_ceiling_50=d.get("compositional_ceiling_50"),
             compositional_ceiling_25=d.get("compositional_ceiling_25"),
             avg_algebraic_entropy=cx.get("avg_algebraic_entropy", 0.0),
@@ -306,9 +323,6 @@ class AlgebraidEvaluator:
             )
 
         results: List[EvalResult] = []
-        depth_stats: defaultdict = defaultdict(lambda: {"correct": 0, "total": 0})
-        family_stats: defaultdict = defaultdict(lambda: {"correct": 0, "total": 0})
-        dim_stats: defaultdict = defaultdict(lambda: {"correct": 0, "total": 0})
         missing = 0
         errored = 0
 
@@ -341,11 +355,16 @@ class AlgebraidEvaluator:
                         canon = _dihedral_canonical(response, int(m.group(1)))
                         if canon:
                             correct = check_answer(canon, task.answer_raw, strict=self.strict)
+                # Q_8 notation: normalise alternative quaternion representations
+                if not correct and task.structures == ["Q_8"]:
+                    canon = _quaternion_canonical(response)
+                    if canon:
+                        correct = check_answer(canon, task.answer_raw, strict=self.strict)
             except Exception:
                 correct = False
 
-            # Prefer complexity stored in task metadata (embedded at generation time);
-            # fall back to computing it live for tasks loaded from older JSONL files.
+            # Read complexity from task metadata (embedded at generation time
+            # or backfilled by TaskSet.from_jsonl for older files).
             meta_cx = (task.metadata or {}).get("complexity")
             if meta_cx:
                 complexity = AlgebraicComplexity(
@@ -360,15 +379,7 @@ class AlgebraidEvaluator:
                 complexity_totals["structural_interference"] += complexity.structural_interference
                 complexity_count += 1
             else:
-                try:
-                    complexity = compute_complexity(task)
-                    complexity_totals["algebraic_entropy"]       += complexity.algebraic_entropy
-                    complexity_totals["commutativity_distance"]  += complexity.commutativity_distance
-                    complexity_totals["orbit_complexity"]        += complexity.orbit_complexity
-                    complexity_totals["structural_interference"] += complexity.structural_interference
-                    complexity_count += 1
-                except Exception:
-                    complexity = None
+                complexity = None
 
             family_val = task.family.value if hasattr(task.family, "value") else str(task.family)
             dim_val = task.dimension.value if hasattr(task.dimension, "value") else str(task.dimension)
@@ -383,37 +394,22 @@ class AlgebraidEvaluator:
                 dimension=dim_val,
                 complexity=complexity,
             )
+            if not correct:
+                result.error_category = _classify_error(result)
             results.append(result)
 
-            depth_stats[task.depth]["total"] += 1
-            family_stats[family_val]["total"] += 1
-            dim_stats[dim_val]["total"] += 1
-
-            if correct:
-                depth_stats[task.depth]["correct"] += 1
-                family_stats[family_val]["correct"] += 1
-                dim_stats[dim_val]["correct"] += 1
-
-        total = len(results)
+        total_scored = len(results)
+        total = total_scored + errored  # include errored in total for honest reporting
         total_correct = sum(1 for r in results if r.correct)
-
-        for stats_dict in [depth_stats, family_stats, dim_stats]:
-            for v in stats_dict.values():
-                v["accuracy"] = v["correct"] / v["total"] if v["total"] > 0 else 0.0
 
         # Compositional ceiling: computed on chain families only so that
         # conceptual (always depth=1), rule, adversarial, and intermediate
         # tasks do not distort the depth-accuracy relationship.
-        # Adversarial and intermediate share the intra-structure family label
-        # so they must also be excluded by dimension.
-        chain_depth_stats: Dict = defaultdict(lambda: {"correct": 0, "total": 0})
-        for r in results:
-            if r.family in CHAIN_FAMILIES and r.dimension not in CHAIN_EXCLUDED_DIMENSIONS:
-                chain_depth_stats[r.depth]["total"] += 1
-                if r.correct:
-                    chain_depth_stats[r.depth]["correct"] += 1
-        for v in chain_depth_stats.values():
-            v["accuracy"] = v["correct"] / v["total"] if v["total"] > 0 else 0.0
+        chain_results = [
+            r for r in results
+            if r.family in CHAIN_FAMILIES and r.dimension not in CHAIN_EXCLUDED_DIMENSIONS
+        ]
+        chain_depth_stats = _compute_stats(chain_results, lambda r: r.depth)
 
         ceiling_50 = self._find_ceiling(chain_depth_stats, 0.50)
         ceiling_25 = self._find_ceiling(chain_depth_stats, 0.25)
@@ -428,10 +424,7 @@ class AlgebraidEvaluator:
             total_correct=total_correct,
             missing_predictions=missing,
             errored_predictions=errored,
-            accuracy_overall=total_correct / total if total > 0 else 0.0,
-            accuracy_by_depth=dict(depth_stats),
-            accuracy_by_family=dict(family_stats),
-            accuracy_by_dimension=dict(dim_stats),
+            accuracy_overall=total_correct / total_scored if total_scored > 0 else 0.0,
             compositional_ceiling_50=ceiling_50,
             compositional_ceiling_25=ceiling_25,
             avg_algebraic_entropy=complexity_totals["algebraic_entropy"] / n,

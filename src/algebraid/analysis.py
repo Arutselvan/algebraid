@@ -23,12 +23,10 @@ depths do not reflect monotonic difficulty scaling.
 from __future__ import annotations
 
 import math
-import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
-from .evaluator import EvalReport, EvalResult, CHAIN_FAMILIES, CHAIN_EXCLUDED_DIMENSIONS
-from .task_model import CompositionDimension
+from .evaluator import EvalReport, EvalResult, CHAIN_FAMILIES, CHAIN_EXCLUDED_DIMENSIONS, _HALLUCINATION_RE
 
 
 # Module-level aliases for readability in this file.
@@ -52,16 +50,8 @@ def _chain_results(report: EvalReport) -> List[EvalResult]:
 
 def _depth_stats_from_results(results: List[EvalResult]) -> Dict[int, Dict[str, Any]]:
     """Compute per-depth accuracy stats from a list of EvalResult objects."""
-    stats: Dict[int, Dict[str, Any]] = {}
-    for r in results:
-        if r.depth not in stats:
-            stats[r.depth] = {"correct": 0, "total": 0}
-        stats[r.depth]["total"] += 1
-        if r.correct:
-            stats[r.depth]["correct"] += 1
-    for v in stats.values():
-        v["accuracy"] = v["correct"] / v["total"] if v["total"] > 0 else 0.0
-    return stats
+    from .evaluator import _compute_stats
+    return _compute_stats(results, lambda r: r.depth)
 
 
 # -- Standalone Advanced: Error Scaling Law ------------------------------------
@@ -281,45 +271,7 @@ def find_phase_transition(report: EvalReport) -> Dict[str, Any]:
     }
 
 
-# -- 1. Hallucination Onset / Error helpers ------------------------------------
-
-_HALLUCINATION_RE = re.compile(
-    r"cannot|undefined|infinity|idk|unknown|impossible|not defined|n/a|none|sorry|don.t know",
-    re.IGNORECASE,
-)
-
-
-def _to_num(s: str) -> Optional[float]:
-    """Try to extract a leading number from a string."""
-    try:
-        token = s.strip().split()[0] if s.strip() else ""
-        cleaned = re.sub(r"[^0-9\-\.]", "", token)
-        return float(cleaned) if cleaned else None
-    except (ValueError, IndexError):
-        return None
-
-
-def _classify_error(result: EvalResult) -> str:
-    """Classify a wrong answer into a broad failure mode (used by complexity_analysis)."""
-    resp = result.model_response.strip()
-    if _HALLUCINATION_RE.search(resp):
-        return "hallucination"
-    if result.dimension == CompositionDimension.ADVERSARIAL.value:
-        return "adversarial_trap"
-    is_tuple_answer = result.ground_truth.strip().startswith("(")
-    resp_num = None if is_tuple_answer else _to_num(resp)
-    gt_num = None if is_tuple_answer else _to_num(result.ground_truth)
-    if resp_num is not None and gt_num is not None:
-        if abs(resp_num - gt_num) == 1:
-            return "off_by_one"
-        if resp_num != 0 and abs(resp_num + gt_num) <= 1:
-            return "inverse_confusion"
-    if resp.lower() in ("0", "1", "e", "identity", "(0)", "(1)"):
-        return "identity_confusion"
-    return "wrong_value"
-
-
-# -- 2. Hallucination Onset ----------------------------------------------------
+# -- 1. Hallucination Onset ----------------------------------------------------
 
 def hallucination_onset(report: EvalReport, threshold: float = 0.15) -> Dict[str, Any]:
     """
@@ -375,8 +327,9 @@ def accuracy_by_depth(report: EvalReport) -> Dict[str, Any]:
     Returns a dict with two keys:
 
     curve
-        List of {depth, accuracy, correct, total} for each depth level in chain
-        families (intra, inter, field), excluding adversarial and intermediate dimensions.
+        List of {depth, accuracy, correct, total, errors_by_category} for each
+        depth level in chain families (intra, inter, field), excluding adversarial
+        and intermediate dimensions.
 
     by_family
         {family: [{depth, accuracy, correct, total}, ...]} — the same chain-family
@@ -385,12 +338,19 @@ def accuracy_by_depth(report: EvalReport) -> Dict[str, Any]:
     chain = _chain_results(report)
     chain_stats = _depth_stats_from_results(chain)
 
+    # Build per-depth error category counts
+    depth_errors: Dict[int, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for r in chain:
+        if not r.correct:
+            depth_errors[r.depth][r.error_category or "wrong_value"] += 1
+
     curve = [
         {
             "depth": depth,
             "accuracy": round(d["accuracy"], 4),
             "correct": d["correct"],
             "total": d["total"],
+            "errors_by_category": dict(depth_errors.get(depth, {})),
         }
         for depth, d in sorted(chain_stats.items())
     ]
@@ -528,7 +488,7 @@ def complexity_vs_accuracy(report: EvalReport) -> List[Dict[str, Any]]:
     for r in report.results:
         if r.complexity is None:
             continue
-        category = "correct" if r.correct else _classify_error(r)
+        category = "correct" if r.correct else (r.error_category or "wrong_value")
         result.append({
             "task_id":  r.task_id,
             "family":   r.family,

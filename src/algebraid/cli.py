@@ -305,7 +305,7 @@ def _pipeline(args: argparse.Namespace) -> None:
         else:
             figures_dir = None   # nothing written; omit from manifest
 
-        pdf_path = generate_report_pdf(analysis, figures_dir or run_dir, saved_figs)
+        pdf_path = generate_report_pdf(analysis, figures_dir or run_dir)
         if pdf_path:
             rel = os.path.relpath(pdf_path, run_dir)
             print(f"      Saved -> {rel}")
@@ -422,7 +422,7 @@ def _analyze(args: argparse.Namespace) -> None:
         names = [os.path.basename(p) for p in saved_figs]
         print(f"Figures saved to {figures_dir}/ ({', '.join(names)})")
 
-    pdf_path = generate_report_pdf(analysis, figures_dir, saved_figs)
+    pdf_path = generate_report_pdf(analysis, figures_dir)
     if pdf_path:
         print(f"Report saved to {pdf_path}")
 
@@ -516,7 +516,7 @@ def main() -> None:
     p.add_argument("-o", "--output", default=None,
                    help="Output predictions JSON (default: ./results/preds_{model}_{taskset}_{ts}.json).")
     p.add_argument("-a", "--adapter", default="openai",
-                   help="Adapter: openai | anthropic | openrouter | custom_http | huggingface.")
+                   help="Adapter: openai | anthropic | openrouter | ollama | custom_http | huggingface.")
     p.add_argument("-m", "--model", default="gpt-4.1-nano",
                    help="Model identifier (default: gpt-4.1-nano).")
     p.add_argument("-t", "--temperature", type=float, default=0.0,
@@ -554,7 +554,7 @@ def main() -> None:
     p.add_argument("-m", "--model", default="gpt-4.1-nano",
                    help="Model identifier (default: gpt-4.1-nano).")
     p.add_argument("-a", "--adapter", default="openai",
-                   help="Adapter: openai | anthropic | openrouter | custom_http | huggingface.")
+                   help="Adapter: openai | anthropic | openrouter | ollama | custom_http | huggingface.")
     p.add_argument("-t", "--temperature", type=float, default=0.0,
                    help="Sampling temperature (default: 0.0).")
     p.add_argument("--max-tokens", type=int, default=512,

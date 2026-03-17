@@ -174,6 +174,9 @@ class TestTaskSet:
             reloaded = ts[0]
             # Must be a dict so callers can safely call .get() on it
             assert isinstance(reloaded.metadata, dict)
-            assert reloaded.metadata == {}
+            # from_jsonl backfills complexity for older files, so metadata
+            # may contain {"complexity": ...} after load — that's expected.
+            non_cx = {k: v for k, v in reloaded.metadata.items() if k != "complexity"}
+            assert non_cx == {}
         finally:
             os.unlink(path)

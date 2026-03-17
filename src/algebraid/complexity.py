@@ -109,12 +109,38 @@ def compute_commutativity_distance(task: Task) -> float:
     if is_comm:
         return 0.0
 
-    # Non-commutative structure: estimate based on depth
-    # At depth 1, there are 0 consecutive pairs; at depth d, there are d-1 pairs
     if task.depth <= 1:
         return 0.0
-    # In a non-commutative group, we conservatively assume all pairs are order-dependent
-    return 1.0
+
+    # Check the solution trace for consecutive pairs that actually fail to commute.
+    # If the trace is available, count how many adjacent intermediate values
+    # differ when the two surrounding operations are swapped.  Without a trace,
+    # fall back to a conservative estimate of 1.0.
+    if not task.solution_trace or len(task.solution_trace) < 3:
+        return 1.0
+
+    # Use trace values: for each consecutive triple (v_{i-1}, v_i, v_{i+1}),
+    # the pair of operations commute iff the intermediate value is the same
+    # when you swap the two ops. Since we don't have access to the operations
+    # themselves here, we use a proxy: consecutive identical intermediate
+    # values suggest commutativity (the operations didn't interact).
+    # More precisely, we check whether adjacent trace values repeat, which
+    # indicates the operation is identity-like and thus trivially commutes.
+    n_pairs = len(task.solution_trace) - 2  # number of consecutive op pairs
+    if n_pairs <= 0:
+        return 0.0
+
+    non_comm_pairs = 0
+    for i in range(1, len(task.solution_trace) - 1):
+        _, v_prev = task.solution_trace[i - 1]
+        _, v_curr = task.solution_trace[i]
+        _, v_next = task.solution_trace[i + 1]
+        # If all three values differ, the operations are order-dependent
+        # in a non-commutative group
+        if v_prev != v_curr and v_curr != v_next:
+            non_comm_pairs += 1
+
+    return non_comm_pairs / n_pairs
 
 
 def compute_orbit_complexity(task: Task) -> float:
@@ -143,7 +169,7 @@ def compute_orbit_complexity(task: Task) -> float:
             else:
                 distinct.add(val)
         return min(len(distinct) / order, 1.0)
-    except Exception:
+    except (TypeError, ValueError):
         return 0.0
 
 

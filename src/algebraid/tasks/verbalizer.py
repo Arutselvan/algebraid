@@ -464,9 +464,13 @@ class Verbalizer:
         if op_type == "inverse":
             op_desc = f"Compute the inverse of {a_str} in {composed_name}."
         elif op_type == "op_then_inverse":
+            if b is None:
+                raise ValueError("verbalize_inter: b is required for op_then_inverse")
             b_str_val = composed.element_to_str(b) if skin is None else skin.element_name(b, composed)
             op_desc = f"Compute the inverse of ({a_str} {sym} {b_str_val}) in {composed_name}."
         else:
+            if b is None:
+                raise ValueError(f"verbalize_inter: b is required for op_type={op_type!r}")
             b_str_val = composed.element_to_str(b) if skin is None else skin.element_name(b, composed)
             op_desc = f"{a_str} {sym} {b_str_val}"
 

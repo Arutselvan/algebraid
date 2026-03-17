@@ -9,6 +9,7 @@ All provider SDKs are optional dependencies:
     openai       pip install -e '.[openai]'      OpenAI chat completion API.
     anthropic    pip install -e '.[anthropic]'   Anthropic Messages API.
     openrouter   pip install -e '.[openai]'      OpenRouter (500+ models, one key).
+    ollama       (no extra deps)                 Ollama native API (local models).
     custom_http  pip install -e '.[openai]'      Any OpenAI-compatible endpoint.
     huggingface  Not yet implemented; use custom_http with a vLLM/TGI server.
 
@@ -28,6 +29,8 @@ so ``algebraid run`` and ``algebraid pipeline`` are both resume-safe.
 import json
 import os
 import time
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
@@ -339,6 +342,135 @@ class CustomHTTPAdapter(BaseAdapter):
         return resp.choices[0].message.content or ""
 
 
+class OllamaAdapter(BaseAdapter):
+    """Adapter for Ollama (https://ollama.com) local model serving.
+
+    Uses Ollama's native REST API via ``urllib`` -- no extra dependencies
+    required.  The adapter auto-detects the server, lists available models,
+    and will pull a missing model automatically before running.
+
+    The base URL is resolved in this order:
+
+      1. ``base_url`` kwarg passed to the constructor.
+      2. ``OLLAMA_HOST`` environment variable.
+      3. Falls back to ``http://localhost:11434``.
+
+    Reasoning models
+    ----------------
+    When a model returns its chain-of-thought in a separate ``reasoning``
+    field, the adapter prepends it as ``<think>...</think>`` before the
+    content text so the verifier can cleanly separate scratchpad from the
+    final answer.
+    """
+
+    def __init__(self, *args: Any, base_url: str = "", **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.base_url = (
+            base_url
+            or os.environ.get("OLLAMA_HOST", "")
+            or "http://localhost:11434"
+        ).rstrip("/")
+
+    def _build_client(self) -> str:
+        # Health check
+        try:
+            req = urllib.request.Request(f"{self.base_url}/api/version")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                resp.read()
+        except (urllib.error.URLError, OSError) as exc:
+            raise ConnectionError(
+                f"Cannot reach Ollama at {self.base_url}. "
+                "Is Ollama running? Start it with: ollama serve"
+            ) from exc
+
+        # Check if model is available locally
+        try:
+            req = urllib.request.Request(f"{self.base_url}/api/tags")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                tags = json.loads(resp.read().decode())
+        except (urllib.error.URLError, OSError) as exc:
+            raise ConnectionError(
+                f"Failed to list Ollama models: {exc}"
+            ) from exc
+
+        local_models = [m["name"] for m in tags.get("models", [])]
+        # Match with or without :latest tag
+        model_found = any(
+            self.model == name or self.model == name.split(":")[0]
+            for name in local_models
+        )
+
+        if not model_found:
+            print(f"  Model '{self.model}' not found locally. Pulling ...")
+            body = json.dumps({"name": self.model, "stream": False}).encode()
+            req = urllib.request.Request(
+                f"{self.base_url}/api/pull",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=600) as resp:
+                    result = json.loads(resp.read().decode())
+                status = result.get("status", "")
+                if "success" in status.lower():
+                    print(f"  Pull complete: {self.model}")
+                else:
+                    print(f"  Pull status: {status}")
+            except (urllib.error.URLError, OSError) as exc:
+                raise RuntimeError(
+                    f"Failed to pull model '{self.model}': {exc}. "
+                    f"Try manually: ollama pull {self.model}"
+                ) from exc
+
+        return self.base_url
+
+    def _call_single(self, client: Any, task: Task) -> str:
+        body = json.dumps({
+            "model": self.model,
+            "messages": [{"role": "user", "content": task.prompt}],
+            "stream": False,
+            "options": {
+                "temperature": self.temperature,
+                "num_predict": self.max_tokens,
+            },
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{self.base_url}/api/chat",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                result = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                raise RuntimeError(
+                    f"Model '{self.model}' not found. "
+                    f"Pull it with: ollama pull {self.model}"
+                ) from exc
+            raise RuntimeError(
+                f"Ollama API error (HTTP {exc.code}): {exc.reason}"
+            ) from exc
+        except (urllib.error.URLError, OSError) as exc:
+            raise ConnectionError(
+                f"Cannot reach Ollama at {self.base_url}. "
+                "Is Ollama running? Start it with: ollama serve"
+            ) from exc
+
+        content: str = result.get("message", {}).get("content", "")
+
+        # Reasoning models may return chain-of-thought separately
+        reasoning: str = result.get("message", {}).get("reasoning", "")
+        if reasoning and "<think>" not in content.lower():
+            content = f"<think>\n{reasoning}\n</think>\n{content}"
+
+        return content
+
+
 class HuggingFaceAdapter(BaseAdapter):
     """Adapter for locally hosted HuggingFace models.
 
@@ -363,6 +495,7 @@ ADAPTER_MAP: Dict[str, type] = {
     "openai": OpenAIAdapter,
     "anthropic": AnthropicAdapter,
     "openrouter": OpenRouterAdapter,
+    "ollama": OllamaAdapter,
     "custom_http": CustomHTTPAdapter,
     "huggingface": HuggingFaceAdapter,
 }

@@ -118,7 +118,32 @@ class TaskSet:
                 if data.get("metadata") is None:
                     data["metadata"] = {}
                 data.setdefault("solution_trace", None)
+                # Restore tuples from JSON arrays for solution_trace entries.
+                if data["solution_trace"] is not None:
+                    data["solution_trace"] = [tuple(entry) for entry in data["solution_trace"]]
+                data.setdefault("structures", [])
                 tasks.append(Task(**data))
+
+        # Backfill complexity for tasks from older JSONL files that lack it.
+        needs_backfill = any(
+            not (t.metadata or {}).get("complexity") for t in tasks
+        )
+        if needs_backfill:
+            from .complexity import compute_complexity
+            for t in tasks:
+                if not (t.metadata or {}).get("complexity"):
+                    try:
+                        cx = compute_complexity(t)
+                        t.metadata["complexity"] = {
+                            "H_alg":     round(cx.algebraic_entropy,          4),
+                            "D_comm":    round(cx.commutativity_distance,     4),
+                            "O_c":       round(cx.orbit_complexity,           4),
+                            "I_s":       round(cx.structural_interference,    4),
+                            "composite": round(cx.composite(),                4),
+                        }
+                    except Exception:
+                        pass
+
         # Use the filename stem as the task-set name so reports show e.g.
         # "sample_all_types_v4" instead of the package default "algebraid".
         name = _os.path.splitext(_os.path.basename(path))[0]

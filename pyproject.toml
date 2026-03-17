@@ -10,27 +10,35 @@ authors = [
 ]
 description = "ALGEBRAID: A Procedurally Generated Benchmark for Compositional Generalization Using Formal Algebraic Structures."
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "matplotlib",
-    "fpdf2",
+    "matplotlib>=3.5.0",
+    "numpy>=1.20.0",
 ]
 
 [project.optional-dependencies]
 openai = ["openai"]
 anthropic = ["anthropic"]
 openrouter = ["openai"]
+ollama = []  # no extra deps -- uses urllib
 dev = [
     "pytest>=7.0",
     "pytest-cov",
     "python-dotenv",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -3,34 +3,22 @@ Figure generation and PDF reporting for ALGEBRAID analysis results.
 
 PNG figures (via matplotlib)
 -----------------------------
-Seven plots are saved to a ``figures/`` sub-directory inside the run folder:
+Four core plots are saved to a ``figures/`` sub-directory:
 
     accuracy_vs_depth.png       Grouped bar chart: accuracy at each depth, one bar
                                 per chain family.
-    accuracy_by_family.png      Horizontal bar chart: overall accuracy per family
-                                (all task families).
+    accuracy_by_family.png      Horizontal bar chart: overall accuracy per family.
     accuracy_by_dimension.png   Horizontal bar chart: accuracy per compositional
                                 dimension.
-    stability_curve.png         Two-panel: accuracy + stacked error counts per depth.
-    complexity_profile.png      1×3 grid: H_alg · D_comm · O_c by depth.
-    complexity_vs_accuracy.png  Stacked outcome bars (correct + error types) vs
-                                H_alg and O_c, with accuracy trend line.
-    hallucination_onset.png     Line chart: hallucination rate by depth with onset
-                                threshold marked.
+    complexity_vs_accuracy.png  Accuracy vs H_alg, D_comm, O_c (3-panel).
 
-PDF report (via fpdf2)
------------------------
-``generate_report_pdf(analysis, out_dir, png_paths)`` generates a clean
-academic-style PDF using *fpdf2* (pure Python, no external binaries):
+Additional figure functions (stability_curve, complexity_profile,
+hallucination_onset) are available for standalone use.
 
-    Cover   Model metadata and overall accuracy summary
-    § 1     Accuracy by composition depth — table + figure
-    § 2     Accuracy by task family — table + figure
-    § 3     Accuracy by compositional dimension — table + figure
-    § 4     Algebraic complexity vs. accuracy — metric table + figure
-
-Matplotlib is required for figures. *fpdf2* must be installed
-(``pip install fpdf2``) for PDF generation.
+PDF report (via matplotlib PdfPages)
+-------------------------------------
+``generate_report_pdf(analysis, out_dir)`` produces a vector PDF with a
+metrics summary page followed by all core figures.
 """
 
 from __future__ import annotations
@@ -133,7 +121,7 @@ def _get_family_accuracy(analysis: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 # ── Figure 1: accuracy vs depth (grouped by family) ──────────────────────────
 
-def _accuracy_vs_depth(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
+def _accuracy_vs_depth(analysis: Dict[str, Any]) -> Optional[Any]:
     """Grouped bar chart: accuracy at each depth, one bar per chain family."""
     import matplotlib.pyplot as plt
     import matplotlib.ticker as mticker
@@ -160,10 +148,7 @@ def _accuracy_vs_depth(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
         ax.set_xticks(depths)
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
-        path = os.path.join(out_dir, "accuracy_vs_depth.png")
-        fig.savefig(path, dpi=150, bbox_inches="tight")
-        plt.close(fig)
-        return path
+        return fig
 
     # Grouped bar chart — one bar per family per depth
     all_depths = sorted({row["depth"] for rows in by_fam_depth.values() for row in rows})
@@ -203,16 +188,12 @@ def _accuracy_vs_depth(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
-
-    path = os.path.join(out_dir, "accuracy_vs_depth.png")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return path
+    return fig
 
 
 # ── Figure 2: accuracy by family ─────────────────────────────────────────────
 
-def _accuracy_by_family(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
+def _accuracy_by_family(analysis: Dict[str, Any]) -> Optional[Any]:
     """Horizontal bar chart: overall accuracy per task family (all families)."""
     import matplotlib.pyplot as plt
     import matplotlib.ticker as mticker
@@ -245,16 +226,12 @@ def _accuracy_by_family(analysis: Dict[str, Any], out_dir: str) -> Optional[str]
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
-
-    path = os.path.join(out_dir, "accuracy_by_family.png")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return path
+    return fig
 
 
 # ── Figure 3: accuracy by dimension ──────────────────────────────────────────
 
-def _accuracy_by_dimension(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
+def _accuracy_by_dimension(analysis: Dict[str, Any]) -> Optional[Any]:
     """Horizontal bar chart: accuracy per compositional dimension."""
     import matplotlib.pyplot as plt
     import matplotlib.ticker as mticker
@@ -286,16 +263,12 @@ def _accuracy_by_dimension(analysis: Dict[str, Any], out_dir: str) -> Optional[s
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
-
-    path = os.path.join(out_dir, "accuracy_by_dimension.png")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return path
+    return fig
 
 
 # ── Figure 4: two-panel stability curve ──────────────────────────────────────
 
-def _stability_curve(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
+def _stability_curve(analysis: Dict[str, Any]) -> Optional[Any]:
     import matplotlib.pyplot as plt
     import matplotlib.ticker as mticker
 
@@ -344,11 +317,7 @@ def _stability_curve(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
     ax2.set_xlabel("Composition depth", fontsize=10)
     ax2.set_xticks(depths)
     fig.tight_layout()
-
-    path = os.path.join(out_dir, "stability_curve.png")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return path
+    return fig
 
 
 # ── Figure 6: complexity metrics by depth ────────────────────────────────────
@@ -362,7 +331,7 @@ _METRIC_LABELS: List[tuple] = [
 # non-inter-structure tasks and therefore uninformative for most datasets.
 
 
-def _complexity_profile(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
+def _complexity_profile(analysis: Dict[str, Any]) -> Optional[Any]:
     import matplotlib.pyplot as plt
 
     cx_data = _get_complexity_by_depth(analysis)
@@ -389,11 +358,7 @@ def _complexity_profile(analysis: Dict[str, Any], out_dir: str) -> Optional[str]
         fontsize=12,
     )
     fig.tight_layout()
-
-    path = os.path.join(out_dir, "complexity_profile.png")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return path
+    return fig
 
 
 # ── Figure 7: complexity vs accuracy (stacked error breakdown) ────────────────
@@ -487,7 +452,7 @@ def _cx_accuracy_panel(ax, data, key, title):
     ax.spines["right"].set_visible(False)
 
 
-def _complexity_vs_accuracy(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
+def _complexity_vs_accuracy(analysis: Dict[str, Any]) -> Optional[Any]:
     """3-panel accuracy line chart: H_alg, D_comm, O_c vs accuracy."""
     import matplotlib.pyplot as plt
 
@@ -506,16 +471,12 @@ def _complexity_vs_accuracy(analysis: Dict[str, Any], out_dir: str) -> Optional[
         fontsize=12,
     )
     fig.tight_layout()
-
-    path = os.path.join(out_dir, "complexity_vs_accuracy.png")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return path
+    return fig
 
 
 # ── Figure 8: hallucination onset ────────────────────────────────────────────
 
-def _hallucination_onset_chart(analysis: Dict[str, Any], out_dir: str) -> Optional[str]:
+def _hallucination_onset_chart(analysis: Dict[str, Any]) -> Optional[Any]:
     """Line chart: hallucination rate by depth with threshold and onset marked."""
     import matplotlib.pyplot as plt
     import matplotlib.ticker as mticker
@@ -574,11 +535,96 @@ def _hallucination_onset_chart(analysis: Dict[str, Any], out_dir: str) -> Option
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
+    return fig
 
-    path = os.path.join(out_dir, "hallucination_onset.png")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    return path
+
+# ── Figure registry ──────────────────────────────────────────────────────────
+
+_FIGURE_REGISTRY = [
+    ("accuracy_vs_depth.png",      _accuracy_vs_depth),
+    ("accuracy_by_family.png",     _accuracy_by_family),
+    ("accuracy_by_dimension.png",  _accuracy_by_dimension),
+    ("complexity_vs_accuracy.png", _complexity_vs_accuracy),
+]
+
+
+# ── Metrics summary page ────────────────────────────────────────────────────
+
+def _metrics_summary(analysis: Dict[str, Any]) -> Optional[Any]:
+    """Single-page text figure with model metadata and accuracy tables."""
+    import matplotlib.pyplot as plt
+
+    model   = analysis.get("model", "unknown")
+    task_set = analysis.get("task_set", "unknown")
+    overall = analysis.get("overall_accuracy", 0.0)
+    total   = analysis.get("total_tasks", 0)
+    correct = analysis.get("total_correct", 0)
+
+    fig, ax = plt.subplots(figsize=(8.5, 11))
+    ax.axis("off")
+
+    y = 0.94
+    ax.text(0.5, y, "ALGEBRAID: Model Evaluation Report",
+            ha="center", fontsize=18, fontweight="bold", color="#1E3A5F")
+    y -= 0.04
+    ax.text(0.5, y, "Compositional Algebraic Reasoning Benchmark",
+            ha="center", fontsize=10, fontstyle="italic", color="#6E6E6E")
+
+    y -= 0.06
+    meta_lines = [
+        f"Model:     {model}",
+        f"Task set:  {task_set}",
+        f"Evaluated: {correct}/{total}  ({overall:.1%} accuracy)",
+    ]
+    for line in meta_lines:
+        ax.text(0.08, y, line, fontsize=11, fontfamily="monospace")
+        y -= 0.03
+
+    # Per-family table
+    by_fam = _get_family_accuracy(analysis)
+    if by_fam:
+        y -= 0.03
+        ax.text(0.08, y, "Accuracy by Task Family", fontsize=13,
+                fontweight="bold")
+        y -= 0.01
+        ax.axhline(y=y, xmin=0.06, xmax=0.94, color="#333", linewidth=0.5)
+        y -= 0.025
+        ax.text(0.08, y, f"{'Family':<30s} {'n':>6s} {'Correct':>8s} {'Acc':>8s}",
+                fontsize=10, fontfamily="monospace", fontweight="bold")
+        y -= 0.025
+        for fam in sorted(by_fam, key=lambda f: by_fam[f]["accuracy"],
+                          reverse=True):
+            d = by_fam[fam]
+            label = _short_family(fam)
+            ax.text(0.08, y,
+                    f"{label:<30s} {d['total']:>6d} {d['correct']:>8d} "
+                    f"{d['accuracy']:>7.1%}",
+                    fontsize=10, fontfamily="monospace")
+            y -= 0.025
+
+    # Per-dimension table
+    by_dim = analysis.get("accuracy_by_dimension", {})
+    if by_dim:
+        y -= 0.03
+        ax.text(0.08, y, "Accuracy by Compositional Dimension", fontsize=13,
+                fontweight="bold")
+        y -= 0.01
+        ax.axhline(y=y, xmin=0.06, xmax=0.94, color="#333", linewidth=0.5)
+        y -= 0.025
+        ax.text(0.08, y, f"{'Dimension':<30s} {'n':>6s} {'Correct':>8s} {'Acc':>8s}",
+                fontsize=10, fontfamily="monospace", fontweight="bold")
+        y -= 0.025
+        for dim in sorted(by_dim, key=lambda d: by_dim[d]["accuracy"],
+                          reverse=True):
+            d = by_dim[dim]
+            ax.text(0.08, y,
+                    f"{dim:<30s} {d['total']:>6d} {d['correct']:>8d} "
+                    f"{d['accuracy']:>7.1%}",
+                    fontsize=10, fontfamily="monospace")
+            y -= 0.025
+
+    fig.tight_layout()
+    return fig
 
 
 # ── PNG figure generation entry point ────────────────────────────────────────
@@ -586,434 +632,73 @@ def _hallucination_onset_chart(analysis: Dict[str, Any], out_dir: str) -> Option
 def generate_figures(analysis: Dict[str, Any], out_dir: str) -> List[str]:
     """Generate all analysis figures and save as PNGs.
 
-    Parameters
-    ----------
-    analysis:
-        Consolidated analysis dict returned by ``run_analysis()``.
-    out_dir:
-        Directory where PNGs will be saved (created if absent).
-
-    Returns
-    -------
-    List[str]
-        Paths of successfully saved PNG files (empty list if no data).
+    Returns list of saved PNG paths.
     """
+    import matplotlib.pyplot as plt
+
     os.makedirs(out_dir, exist_ok=True)
-
-    generators = [
-        _accuracy_vs_depth,
-        _accuracy_by_family,
-        _accuracy_by_dimension,
-        _complexity_vs_accuracy,
-    ]
-
     saved: List[str] = []
-    for gen in generators:
+
+    for filename, func in _FIGURE_REGISTRY:
         try:
-            path = gen(analysis, out_dir)
-            if path:
+            fig = func(analysis)
+            if fig is not None:
+                path = os.path.join(out_dir, filename)
+                fig.savefig(path, dpi=150, bbox_inches="tight")
+                plt.close(fig)
                 saved.append(path)
         except Exception as exc:
-            name = gen.__name__.lstrip("_")
+            name = func.__name__.lstrip("_")
             print(f"  WARNING: figure '{name}' could not be generated: {exc}")
 
     return saved
 
 
-# ── fpdf2 PDF report ──────────────────────────────────────────────────────────
-
-_C_NAVY = (30, 58, 95)    # title accent
-_C_DARK = (20, 20, 20)    # body text
-_C_GRAY = (110, 110, 110) # captions / secondary text
-
-
-def _fmt_pct(v: float) -> str:
-    """Format *v* (0.0–1.0) as a percentage string, e.g. ``'73.2%'``."""
-    return f"{v * 100:.1f}%"
-
-
-def _build_report_pdf(analysis: Dict[str, Any], png_paths: List[str]) -> bytes:
-    """Build the evaluation report and return raw PDF bytes."""
-    from fpdf import FPDF, FontFace, XPos, YPos
-    from fpdf.enums import TableCellFillMode, TableBordersLayout
-    import datetime
-
-    pngs = {os.path.basename(p): p for p in png_paths if os.path.exists(p)}
-
-    model         = analysis.get("model",    "unknown")
-    task_set      = analysis.get("task_set", "unknown")
-    overall       = analysis.get("overall_accuracy", 0.0)
-    curve         = _get_depth_curve(analysis)
-    by_fam        = _get_family_accuracy(analysis)
-    by_dim        = analysis.get("accuracy_by_dimension", {})
-
-    total_tasks   = analysis.get(
-        "total_tasks", sum(r["total"]   for r in curve) if curve else 0
-    )
-    total_correct = analysis.get(
-        "total_correct", sum(r["correct"] for r in curve) if curve else 0
-    )
-    errored_preds = analysis.get("errored_predictions", 0) or 0
-    total_bench   = total_tasks + errored_preds
-
-    if curve:
-        depths      = [r["depth"] for r in curve]
-        depth_range = (f"{min(depths)}-{max(depths)}"
-                       if len(depths) > 1 else str(depths[0]))
-        n_depths    = len(depths)
-    else:
-        depth_range = "--"
-        n_depths    = 0
-
-    date_str   = datetime.date.today().isoformat()
-    n_families = len(by_fam)
-
-    # ── PDF subclass with footer ───────────────────────────────────────────────
-    class _PDF(FPDF):
-        def footer(self) -> None:
-            self.set_y(-12)
-            self.set_font("Times", "", 8)
-            self.set_text_color(*_C_GRAY)
-            self.cell(0, 6, f"ALGEBRAID  |  {model}", align="L",
-                      new_x=XPos.RIGHT, new_y=YPos.TOP)
-            self.cell(0, 6, str(self.page_no()), align="R",
-                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            self.set_text_color(*_C_DARK)
-
-    pdf = _PDF(format="Letter")
-    pdf.set_auto_page_break(auto=True, margin=18)
-    pdf.set_margins(left=20, top=20, right=20)
-    lw   = pdf.w - 40    # usable text width (~175.9 mm)
-    fig_w = lw * 0.88    # figures slightly narrower than full text width
-
-    # ── Helpers ────────────────────────────────────────────────────────────────
-
-    def rule(thick: bool = False) -> None:
-        pdf.set_draw_color(*_C_DARK)
-        pdf.set_line_width(0.5 if thick else 0.2)
-        y = pdf.get_y()
-        pdf.line(20, y, 20 + lw, y)
-        pdf.set_line_width(0.2)
-
-    def sec_title(n: int, title: str) -> None:
-        pdf.ln(5)
-        pdf.set_font("Times", "B", 11)
-        pdf.set_text_color(*_C_DARK)
-        pdf.cell(0, 6, f"{n}.  {title}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        rule(thick=False)
-        pdf.ln(3)
-
-    def body_text(text: str) -> None:
-        pdf.set_font("Times", "", 9)
-        pdf.set_text_color(*_C_DARK)
-        pdf.multi_cell(0, 5, text, align="J")
-        pdf.ln(3)
-
-    def academic_table(
-        col_labels: List[str],
-        rows: List[List[str]],
-        col_widths: List[float],
-        right_from: int = 1,
-    ) -> None:
-        """Booktabs-style table: toprule/midrule/bottomrule, no fill."""
-        LINE_H = 5.0
-        PAD    = 1.0
-        HDR_H  = LINE_H + 2 * PAD   # approx header row height
-        tbl_w  = sum(col_widths)
-        x0     = 20
-
-        headings_style = FontFace(emphasis="BOLD")
-        pdf.set_font("Times", "", 9)
-        pdf.set_text_color(*_C_DARK)
-
-        y_top = pdf.get_y()
-
-        with pdf.table(
-            col_widths=tuple(col_widths),
-            headings_style=headings_style,
-            cell_fill_mode=TableCellFillMode.NONE,
-            borders_layout=TableBordersLayout.NONE,
-            line_height=LINE_H,
-            padding=PAD,
-            align="LEFT",
-            gutter_height=0,
-        ) as table:
-            hdr = table.row()
-            for lbl in col_labels:
-                hdr.cell(lbl)
-            for data_row in rows:
-                row = table.row()
-                for i, cell_val in enumerate(data_row):
-                    align = "R" if i >= right_from else "L"
-                    row.cell(str(cell_val), align=align)
-
-        y_bot = pdf.get_y()
-
-        # Overlay booktabs rules (drawn after table so they sit on top)
-        pdf.set_draw_color(*_C_DARK)
-        pdf.set_line_width(0.5)
-        pdf.line(x0, y_top, x0 + tbl_w, y_top)          # toprule (thick)
-        pdf.set_line_width(0.2)
-        pdf.line(x0, y_top + HDR_H, x0 + tbl_w, y_top + HDR_H)  # midrule
-        pdf.set_line_width(0.5)
-        pdf.line(x0, y_bot, x0 + tbl_w, y_bot)           # bottomrule (thick)
-        pdf.set_line_width(0.2)
-        pdf.ln(4)
-
-    def embed_figure(name: str, caption: str) -> None:
-        path = pngs.get(name)
-        if not path:
-            return
-        pdf.image(path, w=fig_w)
-        pdf.set_font("Times", "I", 8)
-        pdf.set_text_color(*_C_GRAY)
-        pdf.multi_cell(0, 4.5, caption)
-        pdf.set_text_color(*_C_DARK)
-        pdf.ln(2)
-
-    # ── Title header (page 1) ──────────────────────────────────────────────────
-    pdf.add_page()
-
-    # Brand + report title
-    pdf.set_font("Times", "B", 20)
-    pdf.set_text_color(*_C_NAVY)
-    pdf.cell(0, 11, "ALGEBRAID: Model Evaluation Report",
-             align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Times", "I", 10)
-    pdf.set_text_color(*_C_GRAY)
-    pdf.cell(0, 5, "Compositional Algebraic Reasoning Benchmark",
-             align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(3)
-    rule(thick=True)
-    pdf.ln(3)
-
-    # Metadata: two columns
-    hw = lw / 2
-    for k1, v1, k2, v2 in [
-        ("Model:",       model,       "Task Set:",    task_set),
-        ("Date:",        date_str,    "Depth Range:", depth_range),
-        ("Evaluated:",   str(total_tasks),  "Correct:",     str(total_correct)),
-        ("Accuracy:",    _fmt_pct(overall), "Errors:",      str(errored_preds)),
-    ]:
-        pdf.set_font("Times", "B", 9)
-        pdf.set_text_color(*_C_DARK)
-        pdf.cell(hw * 0.38, 5.5, k1, new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.set_font("Times", "", 9)
-        pdf.cell(hw * 0.62, 5.5, str(v1), new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.set_font("Times", "B", 9)
-        pdf.cell(hw * 0.38, 5.5, k2, new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.set_font("Times", "", 9)
-        pdf.cell(hw * 0.62, 5.5, str(v2), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(3)
-    rule(thick=True)
-    pdf.ln(3)
-
-    # Abstract
-    pdf.set_font("Times", "B", 9)
-    pdf.set_text_color(*_C_DARK)
-    pdf.cell(0, 5, "Abstract", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    abstract = (
-        f"  This report evaluates {model} on ALGEBRAID -- a procedurally generated "
-        f"suite of compositional algebraic reasoning tasks. The model answered "
-        f"{total_correct} of {total_tasks} evaluated tasks correctly "
-        f"({_fmt_pct(overall)} accuracy)"
-    )
-    if n_depths > 0:
-        abstract += f", spanning {n_depths} composition depth{'s' if n_depths != 1 else ''}"
-    if n_families > 0:
-        abstract += f" across {n_families} task {'families' if n_families != 1 else 'family'}"
-    abstract += "."
-    if errored_preds > 0:
-        abstract += (
-            f" {errored_preds} response{'s' if errored_preds != 1 else ''} "
-            "excluded due to parsing errors."
-        )
-    pdf.set_font("Times", "", 9)
-    pdf.multi_cell(0, 5, abstract, align="J")
-
-    # ── Section 1: Accuracy by Composition Depth ──────────────────────────────
-    sec_title(1, "Accuracy by Composition Depth")
-    body_text(
-        "Intra-structure, inter-structure, and field arithmetic tasks only. "
-        "Adversarial and intermediate-state tasks are excluded -- their depth "
-        "parameter does not index monotone difficulty."
-    )
-    if curve:
-        depth_rows = [
-            [str(r["depth"]), str(r["correct"]), str(r["total"]),
-             _fmt_pct(r["accuracy"])]
-            for r in curve
-        ]
-        academic_table(
-            ["Depth", "Correct", "Total", "Accuracy"],
-            depth_rows, [28, 32, 32, 32], right_from=1,
-        )
-    else:
-        body_text("No chain-family depth data available.")
-    embed_figure(
-        "accuracy_vs_depth.png",
-        "Figure 1. Accuracy by composition depth, grouped by task family.",
-    )
-
-    # ── Section 2: Accuracy by Task Family ────────────────────────────────────
-    sec_title(2, "Accuracy by Task Family")
-    body_text(
-        "All seven generator families. Adversarial and intermediate-state tasks "
-        "are attributed to the intra-structure family for this breakdown."
-    )
-    _FAM_DESC: Dict[str, str] = {
-        "intra-structure composition":
-            "Operations chained within one algebraic structure.",
-        "inter-structure composition":
-            "Component-wise operations across a direct product G x H.",
-        "field arithmetic":
-            "Expression evaluation in a finite field GF(p).",
-        "rule induction":
-            "Infer the pattern from examples; give the next element.",
-        "conceptual query":
-            "Structural property query (identity, order, commutativity, etc.).",
-    }
-    if by_fam:
-        fam_rows = [
-            [
-                _short_family(f),
-                _FAM_DESC.get(f, ""),
-                str(d["total"]),
-                str(d["correct"]),
-                _fmt_pct(d["accuracy"]),
-            ]
-            for f, d in sorted(
-                by_fam.items(), key=lambda kv: kv[1]["accuracy"], reverse=True
-            )
-        ]
-        academic_table(
-            ["Family", "Description", "n", "Correct", "Acc."],
-            fam_rows, [16, 90, 14, 22, 24], right_from=2,
-        )
-    else:
-        body_text("No per-family data available.")
-    embed_figure(
-        "accuracy_by_family.png",
-        "Figure 2. Overall accuracy per task family, ranked descending.",
-    )
-
-    # ── Section 3: Accuracy by Compositional Dimension ────────────────────────
-    sec_title(3, "Accuracy by Compositional Dimension")
-    body_text(
-        "The first four dimensions follow Hupkes et al. (2020); the remaining "
-        "three are ALGEBRAID-specific extensions."
-    )
-    _DIM_DESC: Dict[str, str] = {
-        "general":
-            "Standard task; no specific compositional stress.",
-        "systematicity":
-            "Unseen combination of known operations and structures.",
-        "substitutivity":
-            "Synonym-substituted prompt; answer must be invariant.",
-        "productivity":
-            "Chain length exceeds the training distribution.",
-        "overgeneralization":
-            "Rule applied to a context where it should not hold.",
-        "adversarial":
-            "Chain designed to trigger a reasoning shortcut.",
-        "intermediate_state":
-            "Value at step k of an N-step chain (k < N).",
-    }
-    if by_dim:
-        dim_rows = [
-            [
-                dim,
-                _DIM_DESC.get(dim, ""),
-                str(d["total"]),
-                str(d["correct"]),
-                _fmt_pct(d["accuracy"]),
-            ]
-            for dim, d in sorted(
-                by_dim.items(), key=lambda kv: kv[1]["accuracy"], reverse=True
-            )
-        ]
-        academic_table(
-            ["Dimension", "Description", "n", "Correct", "Acc."],
-            dim_rows, [36, 70, 14, 22, 24], right_from=2,
-        )
-    else:
-        body_text("No dimension data available.")
-    embed_figure(
-        "accuracy_by_dimension.png",
-        "Figure 3. Accuracy per compositional dimension, ranked descending.",
-    )
-
-    # ── Section 4: Algebraic Complexity vs. Accuracy ──────────────────────────
-    sec_title(4, "Algebraic Complexity vs. Accuracy")
-    body_text(
-        "Three task-intrinsic complexity metrics -- H_alg, D_comm, O_c -- are "
-        "plotted against accuracy. Each panel bins tasks by metric value and "
-        "shows accuracy per bin."
-    )
-    cx_rows = [
-        ["H_alg",  "Algebraic Entropy",
-         "log2(|G|) x depth -- group size and chain length combined."],
-        ["D_comm", "Commutativity Distance",
-         "Fraction of op-pairs where operand order changes the result."],
-        ["O_c",    "Orbit Complexity",
-         "Distinct intermediate values / |G| -- element traversal breadth."],
-    ]
-    academic_table(
-        ["Symbol", "Metric", "Definition"],
-        cx_rows, [18, 46, 102], right_from=3,
-    )
-    embed_figure(
-        "complexity_vs_accuracy.png",
-        "Figure 4. Accuracy vs. H_alg (left), D_comm (centre), O_c (right).",
-    )
-
-    return bytes(pdf.output())
-
+# ── Vector PDF report (matplotlib PdfPages) ──────────────────────────────────
 
 def generate_report_pdf(
     analysis: Dict[str, Any],
     out_dir: str,
-    png_paths: List[str],
 ) -> Optional[str]:
-    """Generate a PDF report from analysis data and PNG figures using fpdf2.
+    """Generate a vector PDF report with metrics summary + all figures.
 
     Parameters
     ----------
     analysis:
-        Consolidated analysis dict returned by ``run_analysis()``.
+        Consolidated analysis dict from ``run_analysis()``.
     out_dir:
-        Directory where ``report.pdf`` will be saved (created if absent).
-    png_paths:
-        Ordered list of PNG file paths from ``generate_figures()``.
+        Directory where ``report.pdf`` will be saved.
 
     Returns
     -------
     str or None
-        Absolute path to the saved PDF, or None on failure.
+        Path to saved PDF, or None on failure.
     """
-    try:
-        from fpdf import FPDF  # noqa: F401
-    except ImportError:
-        print(
-            "  WARNING: fpdf2 is not installed. "
-            "Run:  pip install fpdf2"
-        )
-        return None
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
 
     os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, "report.pdf")
 
     try:
-        pdf_bytes = _build_report_pdf(analysis, png_paths)
+        with PdfPages(out_path) as pdf:
+            # Page 1: metrics summary
+            summary_fig = _metrics_summary(analysis)
+            if summary_fig is not None:
+                pdf.savefig(summary_fig, bbox_inches="tight")
+                plt.close(summary_fig)
+
+            # Remaining pages: one per figure
+            for _filename, func in _FIGURE_REGISTRY:
+                try:
+                    fig = func(analysis)
+                    if fig is not None:
+                        pdf.savefig(fig, bbox_inches="tight")
+                        plt.close(fig)
+                except Exception:
+                    pass
     except Exception as exc:
         print(f"  WARNING: PDF generation failed: {exc}")
-        return None
-
-    out_path = os.path.join(out_dir, "report.pdf")
-    try:
-        with open(out_path, "wb") as fh:
-            fh.write(pdf_bytes)
-    except Exception as exc:
-        print(f"  WARNING: Could not write report.pdf: {exc}")
         return None
 
     return out_path

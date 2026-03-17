@@ -16,6 +16,7 @@ from algebraid.tasks.verifier import (
     _extract_binary_answer,
     _extract_multiple_choice,
     _strip_think_blocks,
+    _quaternion_canonical,
 )
 
 
@@ -39,6 +40,10 @@ class TestNormalizeAnswer:
 
     def test_normalizes_parens(self):
         assert normalize_answer("( 1, 2, 3 )") == "(1, 2, 3)"
+
+    def test_unicode_minus_normalized(self):
+        assert normalize_answer("\u2212k") == "-k"
+        assert normalize_answer("\u22125") == "-5"
 
     def test_passthrough_normal(self):
         assert normalize_answer("42") == "42"
@@ -350,3 +355,72 @@ class TestSubstringFalsePositives:
     def test_no_word_boundary_false_positive(self):
         # truth "123" must not match inside "1234"
         assert check_answer("1234", "123") is False
+
+
+# ── Q_8 canonical normalization ──────────────────────────────────────────────
+
+class TestQuaternionCanonical:
+    """Tests for _quaternion_canonical notation normalization."""
+
+    def test_canonical_elements_pass_through(self):
+        for elem in ("1", "-1", "i", "-i", "j", "-j", "k", "-k"):
+            assert _quaternion_canonical(elem) == elem
+
+    def test_strip_leading_plus(self):
+        assert _quaternion_canonical("+i") == "i"
+        assert _quaternion_canonical("+1") == "1"
+        assert _quaternion_canonical("+j") == "j"
+        assert _quaternion_canonical("+k") == "k"
+
+    def test_identity_alias(self):
+        assert _quaternion_canonical("e") == "1"
+
+    def test_negative_identity_alias(self):
+        assert _quaternion_canonical("-e") == "-1"
+
+    def test_unit_coefficient(self):
+        assert _quaternion_canonical("1i") == "i"
+        assert _quaternion_canonical("1j") == "j"
+        assert _quaternion_canonical("1k") == "k"
+
+    def test_neg_unit_coefficient(self):
+        assert _quaternion_canonical("-1i") == "-i"
+        assert _quaternion_canonical("-1j") == "-j"
+        assert _quaternion_canonical("-1k") == "-k"
+
+    def test_invalid_returns_none(self):
+        assert _quaternion_canonical("x") is None
+        assert _quaternion_canonical("2i") is None
+        assert _quaternion_canonical("ij") is None
+
+
+# ── Round-trip: generator -> verifier ────────────────────────────────────────
+
+class TestRoundTrip:
+    """Verify that every generated task's answer passes through check_answer."""
+
+    def test_all_families_round_trip(self):
+        """Every generated task's answer_raw must self-verify through check_answer.
+
+        Skin-display answers (task.answer) may not round-trip through the
+        verifier's extract_answer pipeline (e.g. ``[Carol, Dave, Eve, ...]``
+        triggers the multiple-choice extractor).  The evaluator handles this
+        by always falling back to answer_raw as ground truth.
+        """
+        from algebraid.generator import AlgebraidGenerator
+
+        gen = AlgebraidGenerator(seed=99)
+        ts = gen.generate(
+            depths=[1, 2],
+            tasks_per_depth=3,
+            families=["intra", "inter", "field", "rule",
+                       "conceptual", "adversarial", "intermediate"],
+            use_skins=True,
+        )
+        assert len(ts.tasks) > 0
+
+        for task in ts:
+            # Raw answer must always self-verify (primary contract)
+            assert check_answer(task.answer_raw, task.answer_raw), (
+                f"{task.task_id}: answer_raw={task.answer_raw!r} did not self-verify"
+            )
